@@ -1,18 +1,25 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react'; // 1. Import useCallback
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import PresenceFooter from '../components/PresenceFooter'; 
-import { Loader2 } from 'lucide-react';
+import PresenceFooter from '../components/PresenceFooter';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { useVanta } from '../hooks/use-vanta';
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
+// 2. A simple debounce function
+function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
+  let timeout: NodeJS.Timeout | null = null;
+
+  const debounced = (...args: Parameters<F>) => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    timeout = setTimeout(() => func(...args), waitFor);
+  };
+
+  return debounced as (...args: Parameters<F>) => void;
+}
 
 function RoomPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -32,6 +39,22 @@ function RoomPage() {
       </div>
     );
   }
+
+  // 3. Create a debounced function to update Supabase
+  // We use useCallback so it doesn't get recreated on every render
+  const debouncedUpdateSupabase = useCallback(
+    debounce(async (newContent: string) => {
+      try {
+        await supabase
+          .from('rooms')
+          .update({ content: newContent, updated_at: new Date().toISOString() })
+          .eq('room_code', roomCode);
+      } catch (err) {
+        console.error('Error updating content:', err);
+      }
+    }, 300), // Wait 300ms after user stops typing
+    [roomCode] // Re-create this function if the roomCode changes
+  );
 
   useEffect(() => {
     const initializeRoom = async () => {
@@ -64,7 +87,15 @@ function RoomPage() {
             },
             (payload) => {
               const newContent = (payload.new as { content: string }).content;
-              setContent(newContent);
+              
+              // 4. OPTIMIZATION: Only update state if the text is different
+              // This stops the "echo" of your own debounced update.
+              setContent(prevContent => {
+                if (prevContent !== newContent) {
+                  return newContent;
+                }
+                return prevContent;
+              });
             }
           )
           .subscribe();
@@ -88,17 +119,11 @@ function RoomPage() {
     };
   }, [roomCode, navigate]);
 
-  const handleTextChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  // 5. Update the text change handler
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
-    setContent(newContent);
-    try {
-      await supabase
-        .from('rooms')
-        .update({ content: newContent, updated_at: new Date().toISOString() })
-        .eq('room_code', roomCode);
-    } catch (err) {
-      console.error('Error updating content:', err);
-    }
+    setContent(newContent); // Update local UI instantly (feels fast)
+    debouncedUpdateSupabase(newContent); // Send to server after a delay (no lag)
   };
 
   if (isLoading && !content) { 
@@ -128,33 +153,13 @@ function RoomPage() {
 
        <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
          <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
-           
-           <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate('/')}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    viewBox="0 -960 960 960" 
-                    fill="currentColor"
-                    className="w-5 h-5" // Set size using Tailwind
-                  >
-                    <path d="M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z"/>
-                  </svg>
-                  <span className="sr-only">Back to Home</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Back to Home</p>
-              </TooltipContent>
-            </Tooltip>
-           </TooltipProvider>
-
+           <button
+             onClick={() => navigate('/')}
+             className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 text-sm"
+           >
+             <ArrowLeft className="w-4 h-4" />
+             Back to Home
+           </button>
            <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-1.5">
                <span className="font-mono text-sm text-muted-foreground tracking-widest hidden sm:inline">Room:</span>
@@ -170,9 +175,9 @@ function RoomPage() {
            <textarea
              ref={textareaRef}
              value={content}
-             onChange={handleTextChange}
+             onChange={handleTextChange} // This now calls the debounced function
              placeholder="Start typing... Your text will sync in real-time"
-             className="w-full h-full min-h-[7Dvh] bg-transparent text-foreground placeholder-muted-foreground focus:outline-none focus:ring-0 border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8"
+             className="w-full h-full min-h-[70vh] bg-transparent text-foreground placeholder-muted-foreground focus:outline-none focus:ring-0 border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8"
              autoFocus
            />
          </div>
