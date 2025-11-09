@@ -1,0 +1,125 @@
+================================================================================
+                    QUICKSYNC - GETTING STARTED
+================================================================================
+
+Welcome! Your QuickSync real-time shared clipboard app is ready.
+
+QUICK START (5 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CREATE DATABASE TABLES
+   
+   Go to: https://app.supabase.com
+   
+   1. Select your project
+   2. Click "SQL Editor" (left sidebar)
+   3. Create new query
+   4. Copy ALL SQL from DATABASE_SETUP.md
+   5. Click "Run"
+   
+   ⚠️  CRITICAL: You must do this or the app won't work!
+
+2. RUN LOCALLY
+   
+   npm install
+   npm run dev
+   
+   Opens at: http://localhost:5173
+
+3. TEST IT
+   
+   • Open in two browser windows
+   • Create a room in one window
+   • Join with the code in the other
+   • Type in one - see it update in real-time
+
+DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 README.md             → Full documentation
+⚡ QUICKSTART.md         → 5-minute setup guide
+🗄️  DATABASE_SETUP.md   → SQL to create tables
+📋 PROJECT_SUMMARY.md   → Technical overview
+
+WHAT YOU GET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Real-time text synchronization
+✅ Live connection counter
+✅ Room creation with 6-char codes
+✅ Dark mode beautiful UI
+✅ Mobile responsive design
+✅ Built with React + Vite
+✅ Zero cost (free tier compatible)
+✅ Ready to deploy
+
+NEXT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Immediate:
+  □ Set up database tables (see DATABASE_SETUP.md)
+  □ Run npm install
+  □ Run npm run dev
+  □ Test in two browser windows
+
+Before deploying:
+  □ Customize colors/fonts if desired
+  □ Test across different devices
+  □ Review DATABASE_SETUP.md for schema details
+
+Deployment:
+  □ npm run build
+  □ Deploy dist/ folder to:
+    - Firebase Hosting (recommended)
+    - Vercel, Netlify, GitHub Pages, etc.
+
+STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+src/
+├── pages/
+│   ├── HomePage.tsx          Create & join rooms
+│   └── RoomPage.tsx          Shared text editor
+├── components/
+│   └── PresenceFooter.tsx    Connection counter
+├── lib/
+│   ├── supabase.ts           Client setup
+│   └── setupDatabase.ts      DB helpers
+└── App.tsx                   Router
+
+dist/                          Production build (after: npm run build)
+
+TECH STACK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Frontend:   Vite 5.4 + React 18 + TypeScript
+Styling:    Tailwind CSS
+Routing:    React Router 6
+Backend:    Supabase Realtime Database
+Icons:      Lucide React
+
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: "Room not found"
+→ Check room code is correct (6 characters)
+→ Make sure database tables are created
+
+Problem: Text not syncing
+→ Check browser console (F12) for errors
+→ Verify .env has correct Supabase credentials
+→ Ensure database tables exist
+
+Problem: Connection count not showing
+→ Refresh the page
+→ Check room_presence table exists
+
+COST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+$0/month - Everything runs on Supabase Free Tier ✅
+
+Questions? Check README.md or PROJECT_SUMMARY.md
+
+Happy sharing! 🚀
+================================================================================
