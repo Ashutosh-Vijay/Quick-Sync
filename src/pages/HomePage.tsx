@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Loader2, Info, AlertTriangle } from 'lucide-react';
+// ✅ NEW: Imported the Share2 icon
+import { Loader2, Info, AlertTriangle, Share2 } from 'lucide-react'; 
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -85,16 +86,21 @@ function HomePage() {
 
       <main className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
         
-        <h1 className="font-lavish text-7xl tracking-wide text-white sm:text-8xl md:text-9xl [text-shadow:_0_4px_10px_rgba(0,0,0,0.3)]">
-          QuickSync
-        </h1>
+        {/* ✅ NEW: Added Share2 icon and wrapped title in a flex container */}
+        <div className="flex items-center justify-center gap-x-3 sm:gap-x-5">
+          <Share2 className="h-12 w-12 sm:h-16 sm:w-16 text-white opacity-90 drop-shadow-lg" />
+          <h1 className="font-lavish text-7xl tracking-wide text-white sm:text-8xl md:text-9xl [text-shadow:_0_4px_10px_rgba(0,0,0,0.3)] select-none">
+            QuickSync
+          </h1>
+        </div>
         
-        <p className="mt-2 font-lavish text-3xl text-gray-200 md:text-4xl [text-shadow:_0_2px_4px_rgba(0,0,0,0.2)]">
+        <p className="mt-2 font-lavish text-3xl text-gray-200 md:text-4xl [text-shadow:_0_2px_4px_rgba(0,0,0,0.2)] select-none">
           Your Real-Time Shared Clipboard
         </p>
 
         <div className="mt-8 w-full">
-          <div className="w-full bg-white/10 dark:bg-black/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-2xl p-6 sm:p-8">
+          {/* ✅ NEW: Added select-none to the entire form container */}
+          <div className="w-full bg-white/10 dark:bg-black/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-2xl p-6 sm:p-8 select-none">
             <button
               onClick={handleCreateRoom}
               disabled={isLoading}
@@ -144,7 +150,7 @@ function HomePage() {
       <footer className="fixed bottom-4 right-4 z-20">
         <div className="flex items-center gap-2">
           
-          <div className="text-xs text-gray-200 hidden sm:block text-right">
+          <div className="text-xs text-gray-200 text-right select-none">
             <p>Made by Ashutosh Vijay</p>
             <p className="text-gray-400">A sub project under Project Apinsity.</p>
           </div>
@@ -179,6 +185,7 @@ function HomePage() {
           </Popover>
         </div>
       </footer>
+
     </div>
   );
 }
