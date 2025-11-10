@@ -55,21 +55,30 @@
   * {
     @apply border-border;
   }
+
+  /*
+   * ✅ Restored Light Mode Background:
+   * This is the dynamic, high-contrast gradient you preferred from the first fix.
+   */
   body {
-    /* The new animated background */
     @apply text-foreground;
     background: linear-gradient(-45deg, #1d2b64, #f8cdda, #1d2b64, #f8cdda);
     background-size: 400% 400%;
     animation: gradient 25s ease infinite;
   }
 
+  /*
+   * ✅ Your Chosen Dark Mode Background:
+   * This is the "Emerald & Gold" gradient you liked.
+   */
   .dark body {
-    background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364, #203a43);
+    background: linear-gradient(-45deg, #000428, #004e92, #000428, #ffc371);
     background-size: 400% 400%;
-    animation: gradient 25s ease infinite;
+    animation: gradient 30s ease infinite;
   }
 }
 
+/* Single keyframe animation is used by both themes */
 @keyframes gradient {
   0% {
     background-position: 0% 50%;
