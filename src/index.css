@@ -56,6 +56,28 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    /* The new animated background */
+    @apply text-foreground;
+    background: linear-gradient(-45deg, #1d2b64, #f8cdda, #1d2b64, #f8cdda);
+    background-size: 400% 400%;
+    animation: gradient 25s ease infinite;
+  }
+
+  .dark body {
+    background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364, #203a43);
+    background-size: 400% 400%;
+    animation: gradient 25s ease infinite;
+  }
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
   }
 }

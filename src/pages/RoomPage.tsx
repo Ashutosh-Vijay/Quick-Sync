@@ -5,7 +5,6 @@ import PresenceFooter from '../components/PresenceFooter';
 import { ArrowLeft, Loader2, Copy, Trash2, Check } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { useVanta } from '../hooks/use-vanta';
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -32,7 +31,6 @@ function RoomPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   
-  const vantaRef = useVanta();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
@@ -120,7 +118,10 @@ function RoomPage() {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [roomCode, navigate, isTyping]); 
+    // 
+    // ✅ CRITICAL PERFORMANCE FIX IS HERE! `isTyping` is removed.
+    // 
+  }, [roomCode, navigate]); 
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
@@ -143,11 +144,9 @@ function RoomPage() {
     debouncedSendUpdate(''); 
   };
 
-  // --- STATS ARE NOW CALCULATED HERE ---
   const characterCount = content.length;
   const lineCount = content.split('\n').length;
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-  // -------------------------------------
 
   if (isLoading && !content) { 
     return (
@@ -168,11 +167,6 @@ function RoomPage() {
 
   return (
     <div className="relative min-h-screen flex flex-col">
-       <div 
-         ref={vantaRef} 
-         className="fixed inset-0 z-0"
-       />
-
        <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
          <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
            <TooltipProvider>
@@ -203,7 +197,7 @@ function RoomPage() {
        </header>
 
        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 z-10">
-         <div className="bg-background rounded-lg shadow-xl border border-border min-h-[70vh] flex flex-col">
+         <div className="bg-background/80 backdrop-blur-lg rounded-lg shadow-xl border border-border min-h-[70vh] flex flex-col">
            <textarea
              ref={textareaRef}
              value={content}
@@ -213,7 +207,6 @@ function RoomPage() {
              autoFocus
            />
            
-           {/* --- STATS BAR (MOVED FROM FOOTER) --- */}
            <div className="border-t border-border bg-muted/50 px-4 py-2 flex justify-between items-center gap-2 rounded-b-lg">
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                 <span>{characterCount.toLocaleString()} chars</span>
@@ -221,7 +214,6 @@ function RoomPage() {
                 <span>{lineCount.toLocaleString()} lines</span>
               </div>
               
-              {/* Copy/Clear Buttons */}
               <div className="flex items-center">
                 <TooltipProvider>
                   <Tooltip>
@@ -250,7 +242,6 @@ function RoomPage() {
          </div>
        </main>
 
-       {/* --- FOOTER (NO LONGER RECEIVES 'content' PROP) --- */}
        <PresenceFooter roomCode={roomCode} />
      </div>
   );

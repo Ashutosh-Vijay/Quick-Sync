@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Loader2, Info, AlertTriangle } from 'lucide-react';
-import { useVanta } from '../hooks/use-vanta';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,6 @@ function HomePage() {
   const [joinError, setJoinError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
-  const vantaRef = useVanta();
 
   const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -79,28 +77,23 @@ function HomePage() {
 
   return (
     <div
-      ref={vantaRef}
-      className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden p-4 bg-slate-900" // Fallback bg
+      className="relative flex min-h-screen w-full flex-col items-center justify-center overflow-hidden p-4"
     >
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
 
-      {/* This overlay adds to the glass effect */}
-      <div className="absolute inset-0 bg-black/30" /> 
-
       <main className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
         
-        <h1 className="font-lavish text-7xl tracking-wide text-white sm:text-8xl md:text-9xl">
+        <h1 className="font-lavish text-7xl tracking-wide text-white sm:text-8xl md:text-9xl [text-shadow:_0_4px_10px_rgba(0,0,0,0.3)]">
           QuickSync
         </h1>
         
-        <p className="mt-2 font-lavish text-3xl text-gray-200 md:text-4xl">
+        <p className="mt-2 font-lavish text-3xl text-gray-200 md:text-4xl [text-shadow:_0_2px_4px_rgba(0,0,0,0.2)]">
           Your Real-Time Shared Clipboard
         </p>
 
         <div className="mt-8 w-full">
-          {/* --- APPLE GLASS UI FIX --- */}
           <div className="w-full bg-white/10 dark:bg-black/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-2xl p-6 sm:p-8">
             <button
               onClick={handleCreateRoom}
@@ -186,7 +179,6 @@ function HomePage() {
           </Popover>
         </div>
       </footer>
-
     </div>
   );
 }
