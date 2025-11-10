@@ -1,22 +1,19 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Users, Info, AlertTriangle } from 'lucide-react'; // 1. Add new icons
+import { Users, Info, AlertTriangle } from 'lucide-react';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"; // 2. Import Popover
-import { Button } from "@/components/ui/button"; // 3. Import Button
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 
 interface PresenceFooterProps {
   roomCode: string;
-  content: string; // 4. Accept content as a prop
+  // --- 'content' prop has been removed ---
 }
 
-function PresenceFooter({ roomCode, content }: PresenceFooterProps) {
+function PresenceFooter({ roomCode }: PresenceFooterProps) {
   const [activeConnections, setActiveConnections] = useState(0);
 
-  // 5. Calculate stats from the content prop
-  const characterCount = content.length;
-  const lineCount = content.split('\n').length;
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+  // --- Stats calculations are GONE ---
 
   useEffect(() => {
     if (!roomCode) return;
@@ -57,23 +54,15 @@ function PresenceFooter({ roomCode, content }: PresenceFooterProps) {
   }, [roomCode]);
 
   return (
-    // 6. Added justify-between to space out content
     <div className="fixed bottom-0 left-0 right-0 bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-t border-border px-4 sm:px-6 py-3 z-20">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 text-muted-foreground text-sm">
         
-        {/* LEFT SIDE: Connections + Stats */}
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-cyan-500" />
-            <span className="font-medium">Active: <span className="text-cyan-500 dark:text-cyan-400 font-bold">{activeConnections}</span></span>
-          </div>
-          {/* 7. Added stats from friend's code */}
-          <div className="hidden sm:flex items-center gap-4 text-xs">
-            <span>{characterCount.toLocaleString()} chars</span>
-            <span>{wordCount.toLocaleString()} words</span>
-            <span>{lineCount.toLocaleString()} lines</span>
-          </div>
+        {/* LEFT SIDE: Connections ONLY */}
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-cyan-500" />
+          <span className="font-medium">Active: <span className="text-cyan-500 dark:text-cyan-400 font-bold">{activeConnections}</span></span>
         </div>
+        {/* --- STATS DIV IS GONE --- */}
 
         {/* RIGHT SIDE: Disclaimer */}
         <div className="flex items-center gap-2">

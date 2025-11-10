@@ -14,21 +14,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// 2. A simple debounce function
+// Debounce function (no changes)
 function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
   let timeout: NodeJS.Timeout | null = null;
-
   const debounced = (...args: Parameters<F>) => {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
+    if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), waitFor);
   };
-
-  // --- THIS IS THE FIX ---
-  // The return type must match the debounced function's signature
   return debounced as (...args: Parameters<F>) => void;
-  // -----------------------
 }
 
 function RoomPage() {
@@ -67,7 +60,6 @@ function RoomPage() {
     }
   }, [roomCode]);
 
-  // This will now have the correct type: (newContent: string) => void
   const debouncedSendUpdate = useCallback(debounce(sendUpdate, 500), [sendUpdate]);
 
   useEffect(() => {
@@ -100,7 +92,6 @@ function RoomPage() {
             },
             (payload) => {
               const newContent = (payload.new as { content: string }).content;
-              
               setContent(prevContent => {
                 if (!isTyping && newContent !== prevContent) {
                   return newContent;
@@ -135,7 +126,7 @@ function RoomPage() {
     const newContent = e.target.value;
     setContent(newContent); 
     setIsTyping(true); 
-    debouncedSendUpdate(newContent); // This will no longer have an error
+    debouncedSendUpdate(newContent); 
   };
 
   const handleCopy = () => {
@@ -149,8 +140,14 @@ function RoomPage() {
   const handleClear = () => {
     setContent(''); 
     setIsTyping(true); 
-    debouncedSendUpdate(''); // This will no longer have an error
+    debouncedSendUpdate(''); 
   };
+
+  // --- STATS ARE NOW CALCULATED HERE ---
+  const characterCount = content.length;
+  const lineCount = content.split('\n').length;
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+  // -------------------------------------
 
   if (isLoading && !content) { 
     return (
@@ -171,7 +168,6 @@ function RoomPage() {
 
   return (
     <div className="relative min-h-screen flex flex-col">
-       
        <div 
          ref={vantaRef} 
          className="fixed inset-0 z-0"
@@ -179,8 +175,7 @@ function RoomPage() {
 
        <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
          <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
-           
-          <TooltipProvider>
+           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -197,7 +192,6 @@ function RoomPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-
            <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-1.5">
                <span className="font-mono text-sm text-muted-foreground tracking-widest hidden sm:inline">Room:</span>
@@ -218,34 +212,46 @@ function RoomPage() {
              className="w-full flex-1 min-h-[65vh] bg-transparent text-foreground placeholder-muted-foreground focus:outline-none focus:ring-0 border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8"
              autoFocus
            />
-           <div className="border-t border-border bg-muted/50 px-4 py-2 flex justify-end items-center gap-2 rounded-b-lg">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleCopy}>
-                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{copied ? "Copied!" : "Copy to clipboard"}</p>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleClear} disabled={!content}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Clear text</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+           
+           {/* --- STATS BAR (MOVED FROM FOOTER) --- */}
+           <div className="border-t border-border bg-muted/50 px-4 py-2 flex justify-between items-center gap-2 rounded-b-lg">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>{characterCount.toLocaleString()} chars</span>
+                <span>{wordCount.toLocaleString()} words</span>
+                <span>{lineCount.toLocaleString()} lines</span>
+              </div>
+              
+              {/* Copy/Clear Buttons */}
+              <div className="flex items-center">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleCopy}>
+                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{copied ? "Copied!" : "Copy to clipboard"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleClear} disabled={!content}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Clear text</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
          </div>
        </main>
 
-       <PresenceFooter roomCode={roomCode} content={content} />
+       {/* --- FOOTER (NO LONGER RECEIVES 'content' PROP) --- */}
+       <PresenceFooter roomCode={roomCode} />
      </div>
   );
 }
