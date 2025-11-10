@@ -13,14 +13,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Debounce function (no changes)
-function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
-  let timeout: NodeJS.Timeout | null = null;
-  const debounced = (...args: Parameters<F>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), waitFor);
-  };
-  return debounced as (...args: Parameters<F>) => void;
+// ✅ NEW: A throttle function for a smoother real-time feel
+function throttle<F extends (...args: any[]) => any>(func: F, limit: number) {
+  let inThrottle: boolean;
+  return function(this: any, ...args: Parameters<F>) {
+    const context = this;
+    if (!inThrottle) {
+      func.apply(context, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
 }
 
 function RoomPage() {
@@ -33,9 +36,7 @@ function RoomPage() {
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-
-  const [isTyping, setIsTyping] = useState(false);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTypingRef = useRef(false);
 
   if (!roomCode) {
     return (
@@ -53,12 +54,11 @@ function RoomPage() {
         .eq('room_code', roomCode);
     } catch (err) {
       console.error('Error updating content:', err);
-    } finally {
-      setIsTyping(false); 
     }
   }, [roomCode]);
 
-  const debouncedSendUpdate = useCallback(debounce(sendUpdate, 500), [sendUpdate]);
+  // ✅ NEW: Switched from debounce to throttle for a 200ms update interval
+  const throttledSendUpdate = useCallback(throttle(sendUpdate, 200), [sendUpdate]);
 
   useEffect(() => {
     const initializeRoom = async () => {
@@ -89,13 +89,9 @@ function RoomPage() {
               filter: `room_code=eq.${roomCode}`,
             },
             (payload) => {
+              if (isTypingRef.current) return;
               const newContent = (payload.new as { content: string }).content;
-              setContent(prevContent => {
-                if (!isTyping && newContent !== prevContent) {
-                  return newContent;
-                }
-                return prevContent;
-              });
+              setContent(newContent);
             }
           )
           .subscribe();
@@ -114,20 +110,18 @@ function RoomPage() {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
     };
-    // 
-    // ✅ CRITICAL PERFORMANCE FIX IS HERE! `isTyping` is removed.
-    // 
   }, [roomCode, navigate]); 
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    isTypingRef.current = true;
     const newContent = e.target.value;
     setContent(newContent); 
-    setIsTyping(true); 
-    debouncedSendUpdate(newContent); 
+    throttledSendUpdate(newContent);
+    // Use a timeout to reset the typing flag
+    setTimeout(() => {
+        isTypingRef.current = false;
+    }, 300); // Reset after 300ms of inactivity
   };
 
   const handleCopy = () => {
@@ -140,8 +134,7 @@ function RoomPage() {
 
   const handleClear = () => {
     setContent(''); 
-    setIsTyping(true); 
-    debouncedSendUpdate(''); 
+    throttledSendUpdate(''); 
   };
 
   const characterCount = content.length;
