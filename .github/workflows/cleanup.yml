@@ -1,0 +1,17 @@
+name: Delete Expired Rooms
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs once every day at midnight UTC
+  workflow_dispatch: # Allows you to run it manually from GitHub
+
+jobs:
+  delete-expired:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Supabase delete_expired_rooms function
+        run: |
+          curl -X POST \
+            "${{ secrets.VITE_SUPABASE_URL }}/rest/v1/rpc/delete_expired_rooms" \
+            -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}"

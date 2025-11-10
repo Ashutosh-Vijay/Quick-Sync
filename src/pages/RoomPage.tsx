@@ -1,11 +1,18 @@
-import { useEffect, useState, useRef, useCallback } from 'react'; // 1. Import useCallback
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PresenceFooter from '../components/PresenceFooter';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Copy, Trash2, Check } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { useVanta } from '../hooks/use-vanta';
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // 2. A simple debounce function
 function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
@@ -18,7 +25,10 @@ function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
     timeout = setTimeout(() => func(...args), waitFor);
   };
 
+  // --- THIS IS THE FIX ---
+  // The return type must match the debounced function's signature
   return debounced as (...args: Parameters<F>) => void;
+  // -----------------------
 }
 
 function RoomPage() {
@@ -27,10 +37,14 @@ function RoomPage() {
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
   
   const vantaRef = useVanta();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+
+  const [isTyping, setIsTyping] = useState(false);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   if (!roomCode) {
     return (
@@ -40,21 +54,21 @@ function RoomPage() {
     );
   }
 
-  // 3. Create a debounced function to update Supabase
-  // We use useCallback so it doesn't get recreated on every render
-  const debouncedUpdateSupabase = useCallback(
-    debounce(async (newContent: string) => {
-      try {
-        await supabase
-          .from('rooms')
-          .update({ content: newContent, updated_at: new Date().toISOString() })
-          .eq('room_code', roomCode);
-      } catch (err) {
-        console.error('Error updating content:', err);
-      }
-    }, 300), // Wait 300ms after user stops typing
-    [roomCode] // Re-create this function if the roomCode changes
-  );
+  const sendUpdate = useCallback(async (newContent: string) => {
+    try {
+      await supabase
+        .from('rooms')
+        .update({ content: newContent, updated_at: new Date().toISOString() })
+        .eq('room_code', roomCode);
+    } catch (err) {
+      console.error('Error updating content:', err);
+    } finally {
+      setIsTyping(false); 
+    }
+  }, [roomCode]);
+
+  // This will now have the correct type: (newContent: string) => void
+  const debouncedSendUpdate = useCallback(debounce(sendUpdate, 500), [sendUpdate]);
 
   useEffect(() => {
     const initializeRoom = async () => {
@@ -66,7 +80,6 @@ function RoomPage() {
           .maybeSingle();
 
         if (fetchError) throw fetchError;
-
         if (!room) {
           setError('Room not found');
           setTimeout(() => navigate('/'), 2000);
@@ -88,10 +101,8 @@ function RoomPage() {
             (payload) => {
               const newContent = (payload.new as { content: string }).content;
               
-              // 4. OPTIMIZATION: Only update state if the text is different
-              // This stops the "echo" of your own debounced update.
               setContent(prevContent => {
-                if (prevContent !== newContent) {
+                if (!isTyping && newContent !== prevContent) {
                   return newContent;
                 }
                 return prevContent;
@@ -99,9 +110,7 @@ function RoomPage() {
             }
           )
           .subscribe();
-
         setIsLoading(false);
-
       } catch (err: any) {
         console.error('Error initializing room:', err);
         setError('Failed to initialize room');
@@ -116,14 +125,31 @@ function RoomPage() {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
     };
-  }, [roomCode, navigate]);
+  }, [roomCode, navigate, isTyping]); 
 
-  // 5. Update the text change handler
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
-    setContent(newContent); // Update local UI instantly (feels fast)
-    debouncedUpdateSupabase(newContent); // Send to server after a delay (no lag)
+    setContent(newContent); 
+    setIsTyping(true); 
+    debouncedSendUpdate(newContent); // This will no longer have an error
+  };
+
+  const handleCopy = () => {
+    if (content) {
+      navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleClear = () => {
+    setContent(''); 
+    setIsTyping(true); 
+    debouncedSendUpdate(''); // This will no longer have an error
   };
 
   if (isLoading && !content) { 
@@ -153,13 +179,25 @@ function RoomPage() {
 
        <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
          <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
-           <button
-             onClick={() => navigate('/')}
-             className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2 text-sm"
-           >
-             <ArrowLeft className="w-4 h-4" />
-             Back to Home
-           </button>
+           
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  onClick={() => navigate('/')}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Home
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Back to Home</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
            <div className="flex items-center gap-4">
              <div className="flex items-center gap-2 rounded-md border border-border bg-card/80 px-3 py-1.5">
                <span className="font-mono text-sm text-muted-foreground tracking-widest hidden sm:inline">Room:</span>
@@ -171,19 +209,43 @@ function RoomPage() {
        </header>
 
        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 z-10">
-         <div className="bg-background rounded-lg shadow-xl border border-border min-h-[70vh]">
+         <div className="bg-background rounded-lg shadow-xl border border-border min-h-[70vh] flex flex-col">
            <textarea
              ref={textareaRef}
              value={content}
-             onChange={handleTextChange} // This now calls the debounced function
+             onChange={handleTextChange} 
              placeholder="Start typing... Your text will sync in real-time"
-             className="w-full h-full min-h-[70vh] bg-transparent text-foreground placeholder-muted-foreground focus:outline-none focus:ring-0 border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8"
+             className="w-full flex-1 min-h-[65vh] bg-transparent text-foreground placeholder-muted-foreground focus:outline-none focus:ring-0 border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8"
              autoFocus
            />
+           <div className="border-t border-border bg-muted/50 px-4 py-2 flex justify-end items-center gap-2 rounded-b-lg">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleCopy}>
+                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{copied ? "Copied!" : "Copy to clipboard"}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleClear} disabled={!content}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear text</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
          </div>
        </main>
 
-       <PresenceFooter roomCode={roomCode} />
+       <PresenceFooter roomCode={roomCode} content={content} />
      </div>
   );
 }
