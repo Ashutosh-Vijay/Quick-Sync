@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Users, Info, AlertTriangle } from 'lucide-react';
+import { Users, Info, AlertTriangle, Flame } from 'lucide-react';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+  } from "@/components/ui/alert-dialog";
 
 interface PresenceFooterProps {
   roomCode: string;
-  // --- 'content' prop has been removed ---
+  onNuke: () => void; // ✅ NEW PROP
 }
 
-function PresenceFooter({ roomCode }: PresenceFooterProps) {
+function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
   const [activeConnections, setActiveConnections] = useState(0);
-
-  // --- Stats calculations are GONE ---
 
   useEffect(() => {
     if (!roomCode) return;
@@ -53,20 +62,56 @@ function PresenceFooter({ roomCode }: PresenceFooterProps) {
     };
   }, [roomCode]);
 
+  const handleNuke = async () => {
+    // ✅ 1. TRIGGER UI INSTANTLY
+    onNuke(); 
+
+    // 2. Perform actual deletion
+    try {
+        await supabase.from('rooms').delete().eq('room_code', roomCode);
+    } catch (e) {
+        console.error("Failed to nuke room", e);
+    }
+  };
+
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-t border-border px-4 sm:px-6 py-3 z-20">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 text-muted-foreground text-sm">
         
-        {/* LEFT SIDE: Connections ONLY */}
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-cyan-500" />
           <span className="font-medium">Active: <span className="text-cyan-500 dark:text-cyan-400 font-bold">{activeConnections}</span></span>
         </div>
-        {/* --- STATS DIV IS GONE --- */}
 
-        {/* RIGHT SIDE: Disclaimer */}
         <div className="flex items-center gap-2">
-          <p className="text-xs text-muted-foreground hidden md:block">
+          
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-red-500/70 hover:text-red-500 hover:bg-red-500/10 h-8 px-2 gap-1 transition-colors">
+                    <Flame className="w-3 h-3" />
+                    <span className="text-xs hidden sm:inline font-bold uppercase tracking-wider">Nuke Room</span>
+                </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle className="text-red-500 flex items-center gap-2">
+                    <Flame className="w-5 h-5" />
+                    Delete Room Forever?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will immediately delete all content and disconnect all active users.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleNuke} className="bg-red-500 hover:bg-red-600 text-white border-none">
+                    Yes, Nuke It
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+           </AlertDialog>
+
+          <p className="text-xs text-muted-foreground hidden md:block border-l border-border pl-3 ml-1">
             Made by Ashutosh Vijay
           </p>
           <Popover>

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-// ✅ NEW: Imported the Share2 icon
-import { Loader2, Info, AlertTriangle, Share2 } from 'lucide-react'; 
+import { Loader2, Info, AlertTriangle, Share2, Clock, ArrowRight } from 'lucide-react'; 
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge"; // Using Badge for the room chips
 
 function HomePage() {
   const navigate = useNavigate();
@@ -13,6 +13,27 @@ function HomePage() {
   const [joinError, setJoinError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
+  const [recentRooms, setRecentRooms] = useState<string[]>([]);
+
+  // ✅ Load history on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('quicksync_history');
+    if (saved) {
+      try {
+        setRecentRooms(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse history", e);
+      }
+    }
+  }, []);
+
+  // ✅ Helper to save unique rooms to history
+  const addToHistory = (code: string) => {
+    const current = recentRooms.filter(r => r !== code); // Remove duplicates
+    const updated = [code, ...current].slice(0, 3); // Keep top 3
+    setRecentRooms(updated);
+    localStorage.setItem('quicksync_history', JSON.stringify(updated));
+  };
 
   const generateRoomCode = (): string => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -31,6 +52,8 @@ function HomePage() {
         { room_code: roomCode, content: '' },
       ]);
       if (error) throw error;
+      
+      addToHistory(roomCode); // Save to history
       navigate(`/room/${roomCode}`);
     } catch (err) {
       console.error('Error creating room:', err);
@@ -38,41 +61,57 @@ function HomePage() {
     }
   };
 
-  const handleJoinRoom = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setJoinError('');
-    setIsJoining(true);
+  const handleJoinRoom = async (e?: React.FormEvent, codeOverride?: string) => {
+      if (e) e.preventDefault();
+      const codeToUse = codeOverride || joinCode;
+      
+      setJoinError('');
+      setIsJoining(true);
 
-    try {
-      const code = joinCode.trim().toUpperCase();
-      if (!code) {
-        setJoinError('Please enter a room code');
+      try {
+        const code = codeToUse.trim().toUpperCase();
+        if (!code) {
+          setJoinError('Please enter a room code');
+          setIsJoining(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('room_code')
+          .eq('room_code', code)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data) {
+          // ✅ SMART ERROR LOGIC
+          // If the user has this in their history, but it's gone from DB,
+          // it means it was nuked or expired.
+          if (recentRooms.includes(code)) {
+              setJoinError('Room has been Nuked or Expired 💥');
+              
+              // Optional: Remove it from history since it's dead
+              const updatedHistory = recentRooms.filter(r => r !== code);
+              setRecentRooms(updatedHistory);
+              localStorage.setItem('quicksync_history', JSON.stringify(updatedHistory));
+          } else {
+              setJoinError('Room not found');
+          }
+          
+          setIsJoining(false);
+          return;
+        }
+
+        addToHistory(code);
+        navigate(`/room/${code}`);
+      } catch (err) {
+        console.error('Error joining room:', err);
+        setJoinError('An error occurred');
+      } finally {
         setIsJoining(false);
-        return;
       }
-
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('room_code')
-        .eq('room_code', code)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        setJoinError('Room not found');
-        setIsJoining(false);
-        return;
-      }
-
-      navigate(`/room/${code}`);
-    } catch (err) {
-      console.error('Error joining room:', err);
-      setJoinError('An error occurred');
-    } finally {
-      setIsJoining(false);
-    }
-  };
+    };
 
   const isLoading = isCreating || isJoining;
 
@@ -86,7 +125,6 @@ function HomePage() {
 
       <main className="relative z-10 flex w-full max-w-md flex-col items-center text-center">
         
-        {/* ✅ NEW: Added Share2 icon and wrapped title in a flex container */}
         <div className="flex items-center justify-center gap-x-3 sm:gap-x-5">
           <Share2 className="h-12 w-12 sm:h-16 sm:w-16 text-white opacity-90 drop-shadow-lg" />
           <h1 className="font-lavish text-7xl tracking-wide text-white sm:text-8xl md:text-9xl [text-shadow:_0_4px_10px_rgba(0,0,0,0.3)] select-none">
@@ -99,7 +137,6 @@ function HomePage() {
         </p>
 
         <div className="mt-8 w-full">
-          {/* ✅ NEW: Added select-none to the entire form container */}
           <div className="w-full bg-white/10 dark:bg-black/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-2xl p-6 sm:p-8 select-none">
             <button
               onClick={handleCreateRoom}
@@ -118,7 +155,7 @@ function HomePage() {
               </div>
             </div>
 
-            <form onSubmit={handleJoinRoom} className="space-y-4">
+            <form onSubmit={(e) => handleJoinRoom(e)} className="space-y-4">
               <div>
                 <input
                   type="text"
@@ -143,6 +180,29 @@ function HomePage() {
                 {isJoining ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Join Room"}
               </button>
             </form>
+
+            {/* ✅ NEW: Recent Rooms Section */}
+            {recentRooms.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-white/10">
+                <div className="flex items-center gap-2 mb-3 text-gray-300 text-xs font-medium uppercase tracking-widest">
+                    <Clock className="w-3 h-3" />
+                    <span>Recent Rooms</span>
+                </div>
+                <div className="flex flex-wrap justify-center gap-2">
+                    {recentRooms.map((code) => (
+                        <Badge 
+                            key={code}
+                            variant="outline" 
+                            className="cursor-pointer hover:bg-white/20 text-white border-white/30 px-3 py-1.5 transition-colors font-mono text-sm"
+                            onClick={() => handleJoinRoom(undefined, code)}
+                        >
+                            {code} <ArrowRight className="w-3 h-3 ml-1 opacity-50" />
+                        </Badge>
+                    ))}
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       </main>
