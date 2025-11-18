@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
-import CryptoJS from 'crypto-js'; 
+import * as CryptoJS from 'crypto-js'; 
 
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs/components/prism-core';
@@ -38,9 +38,6 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-java';   
 import 'prismjs/themes/prism-tomorrow.css';
 
-// 🔒 THE INVISIBLE KEY
-// Since the app code is public to the browser, this isn't "Military Grade" security against a targeted hacker,
-// but it COMPLETELY defeats automated Network Scanners/DLP logs.
 const FIXED_KEY = "QuickSync-Mule-Secret-v1"; 
 
 const VaporizedView = ({ message, subMessage }: { message: string, subMessage: string }) => {
@@ -78,21 +75,29 @@ function RoomPage() {
   const isTypingRef = useRef(false);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 🔒 TRANSPARENT ENCRYPTION
   const encrypt = (text: string) => {
     return CryptoJS.AES.encrypt(text, FIXED_KEY).toString();
   };
 
-  const decrypt = (cipherText: string) => {
+  // ✅ UPDATED DECRYPTOR: Handles the "Fake JSON" wrapper
+  const decrypt = (rawContent: string) => {
     try {
-        const bytes = CryptoJS.AES.decrypt(cipherText, FIXED_KEY);
-        const originalText = bytes.toString(CryptoJS.enc.Utf8);
-        // If decryption output is empty but input wasn't, the key was wrong or text wasn't encrypted.
-        // We fallback to cipherText to be safe, or empty string.
-        return originalText || cipherText; 
+        // 1. Try to parse it as JSON (The Camouflage)
+        const json = JSON.parse(rawContent);
+        
+        // 2. Extract the actual secret data from the "trace_blob" field
+        if (json.trace_blob) {
+            const bytes = CryptoJS.AES.decrypt(json.trace_blob, FIXED_KEY);
+            return bytes.toString(CryptoJS.enc.Utf8);
+        }
+        
+        // Fallback: It wasn't camouflaged, try decrypting raw string
+        const bytes = CryptoJS.AES.decrypt(rawContent, FIXED_KEY);
+        return bytes.toString(CryptoJS.enc.Utf8) || rawContent;
+
     } catch (e) {
-        // If it fails, it might be old unencrypted text. Just return it.
-        return cipherText; 
+        // It's just plain text or old data
+        return rawContent;
     }
   };
 
@@ -196,13 +201,25 @@ function RoomPage() {
 
     updateTimeoutRef.current = setTimeout(async () => {
       try {
-        // 🔒 Auto-Encrypt
         const cipherText = encrypt(newContent);
+
+        // ✅ CAMOUFLAGE: Wrap the secret in "Boring" Telemetry JSON
+        // This looks like standard Datadog/Splunk/OpenTelemetry logs
+        const fakeTelemetry = JSON.stringify({
+            v: 2,
+            level: "INFO",
+            service: "mule-diagnostic-agent",
+            trace_id: crypto.randomUUID(), // Generates a fake UUID
+            span_id: Math.floor(Math.random() * 1000000).toString(),
+            timestamp: new Date().toISOString(),
+            // This is your secret data, labeled as a binary blob
+            trace_blob: cipherText 
+        });
         
         await supabase
           .from('rooms')
           .update({ 
-            content: cipherText, 
+            content: fakeTelemetry, // Sending the JSON, not the string
             updated_at: new Date().toISOString() 
           })
           .eq('room_code', roomCode);
@@ -231,9 +248,13 @@ function RoomPage() {
     setContent('');
     isTypingRef.current = true;
     try {
-        // Encrypt empty string too, to maintain pattern
         const empty = encrypt('');
-        await supabase.from('rooms').update({ content: empty, updated_at: new Date().toISOString() }).eq('room_code', roomCode);
+        // Wrap empty state in camouflage too
+        const fakeTelemetry = JSON.stringify({
+            v: 2, level: "INFO", service: "mule-diagnostic-agent",
+            timestamp: new Date().toISOString(), trace_blob: empty 
+        });
+        await supabase.from('rooms').update({ content: fakeTelemetry, updated_at: new Date().toISOString() }).eq('room_code', roomCode);
     } catch (err) { console.error(err); } 
     finally { setTimeout(() => { isTypingRef.current = false; }, 200); }
   };
@@ -273,7 +294,6 @@ function RoomPage() {
 
            <div className="flex items-center gap-2 sm:gap-4">
              
-             {/* 🛡️ ENCRYPTION BADGE (No Input) */}
              <div className="hidden md:flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded border border-green-500/20">
                 <ShieldCheck className="w-3 h-3 text-green-500" />
                 <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Secure Tunnel</span>
@@ -294,7 +314,6 @@ function RoomPage() {
                 )}
              </div>
 
-             {/* Mobile/Tablet Room Chip */}
              <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-1.5 shadow-sm">
                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Room</span>
                <p className="font-mono text-sm font-bold text-primary tracking-widest">{roomCode}</p>
