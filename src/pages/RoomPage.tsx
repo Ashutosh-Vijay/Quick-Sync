@@ -22,29 +22,44 @@ function RoomPage() {
   
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false); // Visual indicator
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  
-  // ✅ THE FIX: Use a Ref for the typing lock. 
-  // Refs update instantly and don't cause re-renders or dependency issues.
   const isTypingRef = useRef(false);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  if (!roomCode) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-destructive">Invalid room code</p>
-      </div>
-    );
-  }
+  // ✅ NEW: Reusable function to fetch latest data
+  const fetchLatestContent = async () => {
+    if (!roomCode) return;
+    
+    // If user is currently typing, DO NOT fetch, or we overwrite their work
+    if (isTypingRef.current) return;
+
+    try {
+      const { data: room, error } = await supabase
+        .from('rooms')
+        .select('content')
+        .eq('room_code', roomCode)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (room) {
+        setContent(room.content || '');
+      }
+    } catch (err) {
+      console.error('Error refreshing content:', err);
+    }
+  };
 
   useEffect(() => {
+    if (!roomCode) return;
+
     const initializeRoom = async () => {
       try {
+        // 1. Initial Fetch
         const { data: room, error: fetchError } = await supabase
           .from('rooms')
           .select('content')
@@ -58,10 +73,9 @@ function RoomPage() {
           return;
         }
 
-        // Initial load
         setContent(room.content || '');
 
-        // Subscribe to Realtime changes
+        // 2. Subscribe to Realtime
         channelRef.current = supabase
           .channel(`room-content:${roomCode}`)
           .on(
@@ -73,18 +87,17 @@ function RoomPage() {
               filter: `room_code=eq.${roomCode}`,
             },
             (payload) => {
-              // ✅ THE MAGIC LOGIC
-              // If I am currently typing (or waiting for my save to finish),
-              // IGNORE the incoming update. My local version is newer.
-              if (isTypingRef.current) {
-                return;
-              }
-              
+              if (isTypingRef.current) return;
               const newContent = (payload.new as { content: string }).content;
               setContent(newContent);
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+             // Optional: If connection recovers, fetch once to be safe
+             if (status === 'SUBSCRIBED') {
+                fetchLatestContent();
+             }
+          });
         
       } catch (err: any) {
         console.error('Error initializing room:', err);
@@ -96,28 +109,38 @@ function RoomPage() {
 
     initializeRoom();
 
+    // ✅ NEW: Listener for when the user switches back to this tab/app
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('App in foreground: Refreshing data...');
+        fetchLatestContent();
+      }
+    };
+
+    // Add listeners for both visibility change (mobile/tabs) and window focus (desktop)
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleVisibilityChange);
+
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
+      
+      // Clean up listeners
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleVisibilityChange);
     };
   }, [roomCode, navigate]); 
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newContent = e.target.value;
-    
-    // 1. Update UI immediately
     setContent(newContent);
-    
-    // 2. ACTIVATE LOCK: Tell the app "I am busy typing, don't listen to the server"
     isTypingRef.current = true;
     setIsSaving(true);
 
-    // 3. Clear previous timer
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
 
-    // 4. Debounce the save
     updateTimeoutRef.current = setTimeout(async () => {
       try {
         await supabase
@@ -130,15 +153,12 @@ function RoomPage() {
       } catch (err) {
         console.error('Error updating content:', err);
       } finally {
-        // ✅ RELEASE LOCK: Only after the save is fully complete (and sent)
-        // do we allow the server to update us again.
-        // We add a small buffer to ensure the "echo" event has likely passed.
         setTimeout(() => {
             isTypingRef.current = false;
             setIsSaving(false);
         }, 200); 
       }
-    }, 500); // 500ms wait time
+    }, 500);
   };
 
   const handleCopy = () => {
@@ -152,10 +172,8 @@ function RoomPage() {
 
   const handleClear = async () => {
     if (!window.confirm("Clear all text?")) return;
-    
     setContent('');
-    isTypingRef.current = true; // Lock during clear
-
+    isTypingRef.current = true;
     try {
         await supabase
             .from('rooms')
@@ -170,6 +188,8 @@ function RoomPage() {
     }
   };
 
+  if (!roomCode) return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-destructive">Invalid room code</p></div>;
+  
   const characterCount = content.length;
   const lineCount = content ? content.split('\n').length : 0;
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -211,7 +231,6 @@ function RoomPage() {
                <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">Room</span>
                <p className="font-mono text-sm font-bold text-primary tracking-widest">{roomCode}</p>
              </div>
-             {/* Saving Indicator */}
              <div className="w-20 flex justify-end">
                 {isSaving ? (
                     <span className="text-xs text-muted-foreground animate-pulse flex items-center">
