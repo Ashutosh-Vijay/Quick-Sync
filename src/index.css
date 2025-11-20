@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Aladin&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Aladin&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -56,36 +56,39 @@
     @apply border-border;
   }
 
-  /*
-   * ✅ Restored Light Mode Background:
-   * This is the dynamic, high-contrast gradient you preferred from the first fix.
-   */
   body {
     @apply text-foreground;
-    background: linear-gradient(-45deg, #1d2b64, #f8cdda, #1d2b64, #f8cdda);
+    background: linear-gradient(-45deg, #1d2238, #f8cdda, #2d3f86, #f8cdda);
     background-size: 400% 400%;
     animation: gradient 25s ease infinite;
+    transition: background 0.5s ease;
   }
 
-  /*
-   * ✅ Your Chosen Dark Mode Background:
-   * This is the "Emerald & Gold" gradient you liked.
-   */
   .dark body {
     background: linear-gradient(-45deg, #000428, #004e92, #000428, #ffc371);
     background-size: 400% 400%;
     animation: gradient 30s ease infinite;
   }
+
+  body.boring-mode {
+    background: #ffffff !important;
+    animation: none !important;
+  }
+
+  .dark body.boring-mode {
+    background: #000000 !important;
+  }
 }
 
-/* Single keyframe animation is used by both themes */
 @keyframes gradient {
   0% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }
