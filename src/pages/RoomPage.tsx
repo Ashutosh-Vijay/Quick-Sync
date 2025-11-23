@@ -1,31 +1,24 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import PresenceFooter from '../components/PresenceFooter';
-import {
-  ArrowLeft,
-  Loader2,
-  Copy,
-  Trash2,
-  Check,
-  QrCode,
-  Code2,
-  FileText,
-  Layers,
-  Skull,
-  ShieldCheck,
-  RotateCcw,
-  Lock,
-  Unlock,
-} from 'lucide-react';
-import { ThemeToggle } from '../components/ThemeToggle';
-import { RealtimeChannel } from '@supabase/supabase-js';
-import QRCode from 'react-qr-code';
+import { getKeyFromHash } from '@/lib/crypto';
+import { useRoomConnection } from '@/hooks/useRoomConnection';
+import { useRoomStore } from '@/store/roomStore';
+import PresenceFooter from '@/components/PresenceFooter';
+import { FileShare } from '@/components/FileShare';
+import { FileList } from '@/components/FileList';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import {
   Dialog,
   DialogContent,
@@ -34,10 +27,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/toaster';
 import { useToast } from '@/hooks/use-toast';
-import * as CryptoJS from 'crypto-js';
-
+import QRCode from 'react-qr-code';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-core';
@@ -47,243 +42,89 @@ import 'prismjs/components/prism-xml-doc';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-java';
 import 'prismjs/themes/prism-tomorrow.css';
+import {
+  ArrowLeft,
+  Loader2,
+  Copy,
+  Trash2,
+  Check,
+  QrCode,
+  Code2,
+  Skull,
+  RotateCcw,
+  Lock,
+  Unlock,
+  Globe,
+  Activity,
+  Eye,
+  Menu,
+  AlertTriangle,
+  CloudOff,
+  WifiOff,
+  Key,
+  Settings,
+  Share2,
+} from 'lucide-react';
 
-const FIXED_KEY = 'QuickSync-Mule-Secret-v1';
 const HISTORY_LIMIT = 10;
+const MAX_HIGHLIGHT_LENGTH = 50000;
 
-const VaporizedView = ({ message, subMessage }: { message: string; subMessage: string }) => {
-  const navigate = useNavigate();
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center p-6 overflow-hidden relative">
-      <div className="relative z-10 flex flex-col items-center animate-in zoom-in-95 duration-500">
-        <Skull className="w-24 h-24 text-destructive mb-6 animate-bounce" />
-        <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-foreground mb-2">
-          {message}
-        </h1>
-        <p className="text-xl text-muted-foreground font-mono mb-8 max-w-md">{subMessage}</p>
-        <Button size="lg" onClick={() => navigate('/')}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Return
-        </Button>
-      </div>
-    </div>
-  );
-};
+interface HistoryItem {
+  code: string;
+  key: string | null;
+  timestamp: number;
+}
 
-function RoomPage() {
+export default function RoomPage() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isNuked, isLocked, setNuked, setLocked } = useRoomStore();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [content, setContent] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
+  // Local UI State
   const [copied, setCopied] = useState(false);
-  const [isNuked, setIsNuked] = useState(false);
-  const [notFound, setNotFound] = useState(false);
-
+  const [secretKey, setSecretKey] = useState<string | null>(null);
   const [isCodeMode, setIsCodeMode] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [lang, setLang] = useState<'xml' | 'json' | 'java'>('xml');
-
-  // NEW FEATURES STATE
-  const [isLocked, setIsLocked] = useState(false); // Local read-only mode
   const [history, setHistory] = useState<string[]>([]);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const isTypingRef = useRef(false);
-  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const encrypt = (text: string) => {
-    return CryptoJS.AES.encrypt(text, FIXED_KEY).toString();
-  };
-
-  // ✅ UPDATED DECRYPTOR: Handles the "Fake JSON" wrapper
-  const decrypt = (rawContent: string) => {
-    try {
-      // 1. Try to parse it as JSON (The Camouflage)
-      const json = JSON.parse(rawContent);
-
-      // 2. Extract the actual secret data from the "trace_blob" field
-      if (json.trace_blob) {
-        const bytes = CryptoJS.AES.decrypt(json.trace_blob, FIXED_KEY);
-        return bytes.toString(CryptoJS.enc.Utf8);
-      }
-
-      // Fallback: It wasn't camouflaged, try decrypting raw string
-      const bytes = CryptoJS.AES.decrypt(rawContent, FIXED_KEY);
-      return bytes.toString(CryptoJS.enc.Utf8) || rawContent;
-    } catch (_e) {
-      // It's just plain text or old data
-      return rawContent;
+  // Key Extraction Logic
+  useEffect(() => {
+    const keyFromUrl = getKeyFromHash();
+    if (keyFromUrl) {
+      setSecretKey(keyFromUrl);
     }
-  };
-
-  const addToHistory = (newText: string) => {
-    setHistory((prev) => {
-      // Don't add duplicate sequential entries
-      if (prev.length > 0 && prev[0] === newText) return prev;
-      return [newText, ...prev].slice(0, HISTORY_LIMIT);
-    });
-  };
-
-  const fetchLatestContent = useCallback(async () => {
-    if (!roomCode || isNuked || isTypingRef.current) return;
-
-    try {
-      const { data: room, error } = await supabase
-        .from('rooms')
-        .select('content')
-        .eq('room_code', roomCode)
-        .maybeSingle();
-
-      if (error) throw error;
-      if (room) {
-        const decrypted = decrypt(room.content || '');
-        setContent(decrypted);
-        // Add initial load to history if history is empty
-        setHistory((prev) => (prev.length === 0 ? [decrypted] : prev));
-      } else {
-        setIsNuked(true);
-      }
-    } catch (err) {
-      console.error('Error refreshing:', err);
+    if (roomCode) {
+      const saved = localStorage.getItem('quicksync_history_hybrid');
+      let hist: HistoryItem[] = saved ? JSON.parse(saved) : [];
+      hist = hist.filter((h) => h.code !== roomCode);
+      hist.unshift({ code: roomCode, key: keyFromUrl, timestamp: Date.now() });
+      hist = hist.slice(0, 3);
+      localStorage.setItem('quicksync_history_hybrid', JSON.stringify(hist));
     }
-  }, [roomCode, isNuked]);
+  }, [roomCode]);
+
+  // Use the hybrid connection hook
+  const { content, updateContent, isLoading, isSaving, notFound, syncError, remoteTyping } =
+    useRoomConnection(roomCode, secretKey);
 
   useEffect(() => {
-    if (!roomCode) return;
-
-    const initializeRoom = async () => {
-      try {
-        const { data: room, error: fetchError } = await supabase
-          .from('rooms')
-          .select('content')
-          .eq('room_code', roomCode)
-          .maybeSingle();
-
-        if (fetchError) throw fetchError;
-        if (!room) {
-          setNotFound(true);
-          return;
-        }
-
-        const decrypted = decrypt(room.content || '');
-        setContent(decrypted);
-        setHistory([decrypted]);
-
-        channelRef.current = supabase
-          .channel(`room-content:${roomCode}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'rooms',
-              filter: `room_code=eq.${roomCode}`,
-            },
-            (payload) => {
-              if (payload.eventType === 'DELETE') {
-                setIsNuked(true);
-                return;
-              }
-              if (payload.eventType === 'UPDATE') {
-                if (isTypingRef.current) return;
-                const rawContent = (payload.new as { content: string }).content;
-                const incoming = decrypt(rawContent);
-                setContent(incoming);
-                addToHistory(incoming);
-              }
-            }
-          )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') fetchLatestContent();
-          });
-      } catch (_err) {
-        setNotFound(true);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeRoom();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !isNuked) {
-        fetchLatestContent();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleVisibilityChange);
-
-    return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
-      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleVisibilityChange);
-    };
-  }, [roomCode, navigate, isNuked, fetchLatestContent]);
-
-  const handleContentChange = (newContent: string) => {
-    if (isNuked || isLocked) return; // Block edits if locked
-
-    setContent(newContent);
-    isTypingRef.current = true;
-    setIsSaving(true);
-
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
+    if (content) {
+      setHistory((prev) => {
+        if (prev.length > 0 && prev[0] === content) return prev;
+        return [content, ...prev].slice(0, HISTORY_LIMIT);
+      });
     }
+  }, [content]);
 
-    updateTimeoutRef.current = setTimeout(async () => {
-      try {
-        const cipherText = encrypt(newContent);
-
-        // ✅ CAMOUFLAGE: Wrap the secret in "Boring" Telemetry JSON
-        const fakeTelemetry = JSON.stringify({
-          v: 2,
-          level: 'INFO',
-          service: 'mule-diagnostic-agent',
-          trace_id: crypto.randomUUID(),
-          span_id: Math.floor(Math.random() * 1000000).toString(),
-          timestamp: new Date().toISOString(),
-          trace_blob: cipherText,
-        });
-
-        await supabase
-          .from('rooms')
-          .update({
-            content: fakeTelemetry,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('room_code', roomCode);
-
-        // Add to local history after successful save triggers
-        addToHistory(newContent);
-      } catch (err) {
-        console.error('Error updating:', err);
-      } finally {
-        setTimeout(() => {
-          isTypingRef.current = false;
-          setIsSaving(false);
-        }, 200);
-      }
-    }, 500);
-  };
-
+  // Handlers
   const handleUndo = () => {
     if (history.length < 2) return;
-    // Current is index 0, we want index 1
     const previous = history[1];
-    // Optimistic update
-    setContent(previous);
-    // Remove current head from history effectively rewinding
-    const newHistory = history.slice(1);
-    setHistory(newHistory);
-
-    // Trigger save of the restored version
-    handleContentChange(previous);
+    updateContent(previous);
+    setHistory((prev) => prev.slice(1));
     toast({ description: 'Restored previous version' });
   };
 
@@ -296,41 +137,17 @@ function RoomPage() {
     }
   };
 
-  const handleClear = async () => {
+  const handleClear = () => {
     if (!window.confirm('Clear all text?')) return;
-    setContent('');
-    addToHistory('');
-    isTypingRef.current = true;
-    try {
-      const empty = encrypt('');
-      const fakeTelemetry = JSON.stringify({
-        v: 2,
-        level: 'INFO',
-        service: 'mule-diagnostic-agent',
-        timestamp: new Date().toISOString(),
-        trace_blob: empty,
-      });
-      await supabase
-        .from('rooms')
-        .update({
-          content: fakeTelemetry,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('room_code', roomCode);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setTimeout(() => {
-        isTypingRef.current = false;
-      }, 200);
-    }
+    updateContent('');
   };
 
   const toggleLang = () => {
-    if (lang === 'xml') setLang('json');
-    else if (lang === 'json') setLang('java');
-    else setLang('xml');
+    const next = lang === 'xml' ? 'json' : lang === 'json' ? 'java' : 'xml';
+    setLang(next);
   };
+
+  // --- Render Guards ---
 
   if (isLoading)
     return (
@@ -338,143 +155,309 @@ function RoomPage() {
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
       </div>
     );
+
   if (isNuked)
     return (
-      <VaporizedView message="ROOM VAPORIZED" subMessage="The host has detonated this workspace." />
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center p-6 overflow-hidden relative select-none">
+        <div className="relative z-10 flex flex-col items-center animate-in zoom-in-95 duration-500">
+          <Skull className="w-24 h-24 text-destructive mb-6 animate-bounce" />
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-foreground mb-2">
+            ROOM VAPORIZED
+          </h1>
+          <p className="text-xl text-muted-foreground font-mono mb-8 max-w-md">
+            The host has detonated this workspace.
+          </p>
+          <Button size="lg" onClick={() => navigate('/')}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Return
+          </Button>
+        </div>
+      </div>
     );
-  if (notFound) return <VaporizedView message="404: VOID" subMessage="Room not found." />;
 
+  if (notFound)
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-center p-6">
+        <h1 className="text-4xl font-black text-foreground mb-2">404: VOID</h1>
+        <p className="text-xl text-muted-foreground mb-8">Room not found.</p>
+        <Button size="lg" onClick={() => navigate('/')}>
+          Go Home
+        </Button>
+      </div>
+    );
+
+  const isLargeContent = content.length > MAX_HIGHLIGHT_LENGTH;
   const currentUrl = window.location.href;
-  const characterCount = content.length;
-  const lineCount = content ? content.split('\n').length : 0;
-  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-  if (!roomCode) return null;
 
-  return (
-    <div className="relative min-h-screen flex flex-col">
-      <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
-        <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={() => navigate('/')}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ArrowLeft className="w-4 h-4 mr-2" /> Home
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Back to Home</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+  // --- Shared Components ---
+
+  const StatusBadge = () =>
+    secretKey ? (
+      <div className="flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded border border-green-500/20 whitespace-nowrap">
+        <Key className="w-3 h-3 text-green-500" />
+        <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">
+          E2E Secure
+        </span>
+      </div>
+    ) : (
+      <div className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 rounded border border-blue-500/20 whitespace-nowrap">
+        <Globe className="w-3 h-3 text-blue-500" />
+        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+          Public
+        </span>
+      </div>
+    );
+
+  const ShareDialog = ({ children }: { children: React.ReactNode }) => (
+    <Dialog>
+      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogContent className="sm:max-w-md select-none">
+        <DialogHeader>
+          <DialogTitle>Share Room</DialogTitle>
+          <DialogDescription>
+            {secretKey
+              ? 'This QR code includes the encryption key. Treat it like a password.'
+              : 'Anyone with this code can join and edit.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col items-center justify-center p-6 space-y-4">
+          <div className="p-4 bg-white rounded-xl shadow-lg">
+            <QRCode
+              value={currentUrl}
+              size={200}
+              style={{ height: 'auto', maxWidth: '100%', width: '100%' }}
+              viewBox={`0 0 256 256`}
+            />
+          </div>
+          <div className="w-full flex gap-2">
+            <Button
+              className="w-full"
+              onClick={() => {
+                navigator.clipboard.writeText(currentUrl);
+                toast({ description: 'Room Link Copied!' });
+              }}
+            >
+              <Copy className="mr-2 h-4 w-4" /> Copy Link
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
+  // --- Desktop Controls ---
+
+  const DesktopControls = () => (
+    <>
+      <FileShare roomCode={roomCode!} secretKey={secretKey} />
+      <FileList roomCode={roomCode!} secretKey={secretKey} />
+      <StatusBadge />
+
+      <div className="h-6 w-px bg-border mx-1" />
+
+      {/* Editor Settings Dropdown (De-clutters the bar) */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+            <Settings className="w-4 h-4" />
+            <span className="hidden lg:inline">Editor</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-56 p-3" align="end">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Preview Mode</span>
+              <Switch checked={isPreviewMode} onCheckedChange={setIsPreviewMode} />
+            </div>
+            {!isLargeContent && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Code Mode</span>
+                <Switch checked={isCodeMode} onCheckedChange={setIsCodeMode} />
+              </div>
+            )}
+            {isCodeMode && !isLargeContent && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={toggleLang}
+                className="w-full text-xs mt-1"
+              >
+                Language: {lang.toUpperCase()}
+              </Button>
+            )}
+            {isLargeContent && (
+              <div className="text-xs text-yellow-500 flex items-center gap-1 bg-yellow-500/10 p-2 rounded">
+                <AlertTriangle className="w-3 h-3" />
+                Large content: Syntax highlighting disabled.
+              </div>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <ShareDialog>
+        <Button variant="ghost" size="sm" className="gap-2">
+          <Share2 className="w-4 h-4" />
+          <span className="hidden lg:inline">Share</span>
+        </Button>
+      </ShareDialog>
+
+      <div className="hidden justify-end sm:flex ml-2 items-center">
+        {syncError ? (
+          <span className="text-xs text-red-500 font-bold flex items-center animate-pulse whitespace-nowrap">
+            <CloudOff className="w-3 h-3 mr-1" /> {syncError}
+          </span>
+        ) : isSaving ? (
+          <span className="text-xs text-muted-foreground animate-pulse flex items-center">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving
+          </span>
+        ) : (
+          <span className="text-xs text-green-500 flex items-center">
+            <Check className="w-3 h-3 mr-1" /> Synced
+          </span>
+        )}
+      </div>
+      <div className="hidden sm:block ml-1">
+        <ThemeToggle />
+      </div>
+    </>
+  );
+
+  // --- Mobile Controls (The Sheet) ---
+
+  const MobileControls = () => (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon">
+          <Menu className="w-5 h-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+        <SheetHeader>
+          <SheetTitle className="text-left">Room Controls</SheetTitle>
+          <SheetDescription className="sr-only">
+            Manage room settings, files, and theme preferences.
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex flex-col gap-6 mt-6">
+          {/* Status & Theme */}
+          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+            <StatusBadge />
+            <ThemeToggle />
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden md:flex items-center gap-1 px-2 py-1 bg-green-500/10 rounded border border-green-500/20">
-              <ShieldCheck className="w-3 h-3 text-green-500" />
-              <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">
-                Secure Tunnel
-              </span>
+          {/* Files & Sharing */}
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Files & Sharing
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <FileShare roomCode={roomCode!} secretKey={secretKey} />
+              <FileList roomCode={roomCode!} secretKey={secretKey} />
             </div>
+            <ShareDialog>
+              <Button variant="outline" className="w-full gap-2">
+                <QrCode className="w-4 h-4" /> Share Room
+              </Button>
+            </ShareDialog>
+          </div>
 
-            <div className="hidden md:flex items-center space-x-3 border-x border-border px-4 mx-2">
-              <div className="flex items-center space-x-2">
-                <Switch id="code-mode" checked={isCodeMode} onCheckedChange={setIsCodeMode} />
-                <Label
-                  htmlFor="code-mode"
-                  className="text-xs font-medium cursor-pointer flex items-center gap-1 text-muted-foreground"
-                >
-                  {isCodeMode ? <Code2 className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
-                  {isCodeMode ? 'Editor' : 'Text'}
-                </Label>
+          {/* Editor View */}
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Editor View
+            </Label>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4" />
+                <span className="text-sm">Markdown Preview</span>
               </div>
-              {isCodeMode && (
-                <Badge
-                  variant="secondary"
-                  className="cursor-pointer hover:bg-muted-foreground/20 font-mono text-[10px] h-5"
-                  onClick={toggleLang}
-                >
-                  {lang.toUpperCase()}
-                </Badge>
-              )}
+              <Switch checked={isPreviewMode} onCheckedChange={setIsPreviewMode} />
             </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4" />
+                <span className="text-sm">Code Mode</span>
+              </div>
+              <Switch checked={isCodeMode} onCheckedChange={setIsCodeMode} />
+            </div>
+          </div>
 
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-1.5 shadow-sm">
-              <span className="font-mono text-xs text-muted-foreground tracking-widest uppercase">
-                Room
-              </span>
+          {/* Danger Zone (Mobile Delete) */}
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Actions
+            </Label>
+            <Button
+              variant="destructive"
+              className="w-full gap-2"
+              onClick={handleClear}
+              disabled={!content || isLocked}
+            >
+              <Trash2 className="w-4 h-4" /> Clear Content
+            </Button>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+
+  return (
+    <div className="relative min-h-screen flex flex-col select-none">
+      {/* HEADER */}
+      <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
+        <div className="max-w-7xl mx-auto flex h-14 items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/')}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div className="flex items-center gap-2 rounded-full border border-border bg-card/50 px-3 py-1 shadow-sm">
               <p className="font-mono text-sm font-bold text-primary tracking-widest">{roomCode}</p>
             </div>
+          </div>
 
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2 flex">
-                  <QrCode className="w-4 h-4" />
-                  <span className="hidden sm:inline">Share</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Share Room</DialogTitle>
-                  <DialogDescription>
-                    Scan this QR code with your mobile camera to join instantly.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="flex flex-col items-center justify-center p-6 space-y-4">
-                  <div className="p-4 bg-white rounded-xl shadow-lg">
-                    <QRCode
-                      value={currentUrl}
-                      size={200}
-                      style={{
-                        height: 'auto',
-                        maxWidth: '100%',
-                        width: '100%',
-                      }}
-                      viewBox={`0 0 256 256`}
-                    />
-                  </div>
-                  <p className="font-mono text-sm text-muted-foreground bg-muted px-3 py-1 rounded-md">
-                    {roomCode}
-                  </p>
-                </div>
-              </DialogContent>
-            </Dialog>
+          {/* Desktop Toolbar */}
+          <div className="hidden md:flex items-center gap-2">
+            <DesktopControls />
+          </div>
 
-            <div className="w-20 flex justify-end">
-              {isSaving ? (
-                <span className="text-xs text-muted-foreground animate-pulse flex items-center">
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving
-                </span>
-              ) : (
-                <span className="text-xs text-green-500 flex items-center">
-                  <Check className="w-3 h-3 mr-1" /> Synced
-                </span>
-              )}
-            </div>
-            <ThemeToggle />
+          {/* Mobile Toolbar */}
+          <div className="flex md:hidden items-center gap-2">
+            {isSaving ? (
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            ) : (
+              <Check className="w-4 h-4 text-green-500" />
+            )}
+            <MobileControls />
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 z-10">
-        <div className="bg-background/80 backdrop-blur-md rounded-xl shadow-2xl border border-border min-h-[70vh] flex flex-col overflow-hidden relative">
-          {/* Lock Overlay */}
+      {/* MAIN EDITOR AREA */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 py-4 sm:px-6 sm:py-6 z-10 pb-24">
+        <div className="bg-background/80 backdrop-blur-md rounded-xl shadow-sm sm:shadow-2xl border border-border min-h-[calc(100dvh-10rem)] sm:min-h-[70vh] flex flex-col overflow-hidden relative">
           {isLocked && (
             <div className="absolute inset-0 bg-background/10 z-10 flex justify-center pt-24 pointer-events-none">
               <div className="bg-background/80 backdrop-blur-sm border border-border px-4 py-2 rounded-full flex items-center gap-2 text-muted-foreground shadow-lg">
-                <Lock className="w-4 h-4" />
+                <Lock className="w-4 h-4" />{' '}
                 <span className="text-xs font-medium uppercase tracking-wider">Read Only</span>
               </div>
             </div>
           )}
 
-          {isCodeMode ? (
-            <div className="w-full flex-1 min-h-[65vh] overflow-auto p-4 custom-scrollbar">
+          {isPreviewMode ? (
+            <div className="w-full flex-1 min-h-[50vh] overflow-auto p-4 sm:p-8 prose prose-invert max-w-none dark:prose-invert prose-sm sm:prose-base select-text">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
+          ) : isCodeMode && !isLargeContent ? (
+            <div className="w-full flex-1 min-h-[50vh] overflow-auto p-4 custom-scrollbar select-text">
               <Editor
                 value={content}
-                onValueChange={handleContentChange}
+                onValueChange={updateContent}
                 highlight={(code) => {
                   if (lang === 'xml') return highlight(code, languages.markup, 'markup');
                   if (lang === 'json') return highlight(code, languages.json, 'json');
@@ -491,67 +474,67 @@ function RoomPage() {
                   minHeight: '100%',
                 }}
               />
-              <div className="absolute top-4 right-6 text-[10px] text-muted-foreground/40 uppercase tracking-widest pointer-events-none flex items-center gap-1">
-                <Layers className="w-3 h-3" />
-                {lang === 'xml' ? 'XML' : lang.toUpperCase()} Syntax
-              </div>
             </div>
           ) : (
             <textarea
               ref={textareaRef}
               value={content}
-              onChange={(e) => handleContentChange(e.target.value)}
+              onChange={(e) => updateContent(e.target.value)}
               readOnly={isLocked}
               placeholder={
-                isLocked ? 'Room is locked.' : 'Type here. Content is automatically encrypted.'
+                isLocked
+                  ? 'Room is locked.'
+                  : `Type here. Content is ${secretKey ? 'E2E Encrypted' : 'obfuscated from network filters'}.`
               }
-              className="w-full flex-1 min-h-[65vh] bg-transparent text-foreground placeholder-muted-foreground/50 focus:outline-none border-none resize-none font-mono text-base leading-relaxed p-6 sm:p-8"
+              className="w-full flex-1 min-h-[50vh] bg-transparent text-foreground placeholder-muted-foreground/50 focus:outline-none border-none resize-none font-mono text-base leading-relaxed p-4 sm:p-8 select-text"
               autoFocus
               spellCheck={false}
             />
           )}
-          <div className="border-t border-border bg-muted/30 px-4 py-3 flex justify-between items-center gap-4 rounded-b-xl">
-            <div className="flex items-center gap-6 text-xs font-mono text-muted-foreground">
-              <span>{characterCount.toLocaleString()} chars</span>
-              <span>{wordCount.toLocaleString()} words</span>
-              <span>{lineCount.toLocaleString()} lines</span>
+
+          {/* FOOTER TOOLBAR */}
+          <div className="relative z-20 border-t border-border bg-muted/30 px-4 py-3 flex justify-between items-center gap-4 rounded-b-xl">
+            <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground overflow-hidden flex-1 min-w-0">
+              {remoteTyping ? (
+                <span className="flex items-center gap-1 text-cyan-500 animate-pulse font-medium truncate">
+                  <Activity className="w-3 h-3" />{' '}
+                  <span className="hidden sm:inline">Remote Agent typing...</span>
+                </span>
+              ) : (
+                <span className="truncate flex items-center gap-2">
+                  {content.length.toLocaleString()} chars
+                  {isLargeContent && (
+                    <Badge variant="destructive" className="text-[10px] h-4 px-1 shrink-0">
+                      HEAVY
+                    </Badge>
+                  )}
+                  {syncError && (
+                    <div className="flex items-center gap-2 px-2 text-red-500 animate-pulse shrink-0">
+                      <WifiOff className="w-4 h-4" />{' '}
+                      <span className="text-xs font-bold hidden sm:inline">SYNC DISABLED</span>
+                    </div>
+                  )}
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-1">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={() => setIsLocked(!isLocked)}>
-                      {isLocked ? (
-                        <Lock className="w-4 h-4 text-orange-500" />
-                      ) : (
-                        <Unlock className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {isLocked ? 'Unlock Editing' : 'Lock Room (Prevent Accidental Edits)'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleUndo}
-                      disabled={history.length < 2 || isLocked}
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Undo Last Change</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="icon" onClick={() => setLocked(!isLocked)}>
+                {isLocked ? (
+                  <Lock className="w-4 h-4 text-orange-500" />
+                ) : (
+                  <Unlock className="w-4 h-4 text-muted-foreground" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleUndo}
+                disabled={history.length < 2 || isLocked}
+              >
+                <RotateCcw className="w-4 h-4" />
+              </Button>
               <div className="w-px h-4 bg-border mx-1" />
-
               <Button variant="ghost" size="icon" onClick={handleCopy}>
                 {copied ? (
                   <Check className="w-4 h-4 text-green-500" />
@@ -559,23 +542,24 @@ function RoomPage() {
                   <Copy className="w-4 h-4" />
                 )}
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleClear}
-                disabled={!content || isLocked}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              {/* Desktop Delete Button (Mobile has it in menu) */}
+              <div className="hidden sm:block">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleClear}
+                  disabled={!content || isLocked}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       </main>
 
-      <PresenceFooter roomCode={roomCode} onNuke={() => setIsNuked(true)} />
+      <PresenceFooter roomCode={roomCode!} onNuke={() => setNuked(true)} />
       <Toaster />
     </div>
   );
 }
-
-export default RoomPage;

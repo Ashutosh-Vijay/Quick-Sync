@@ -47,6 +47,7 @@ src/
 ### 1. Environment Variables
 
 The `.env` file already contains your Supabase credentials:
+
 - `VITE_SUPABASE_URL`: Your Supabase project URL
 - `VITE_SUPABASE_ANON_KEY`: Your Supabase anonymous key
 
@@ -61,6 +62,7 @@ The `.env` file already contains your Supabase credentials:
 5. Click "Run" to execute
 
 This creates:
+
 - `rooms` table for storing room data and content
 - `room_presence` table for tracking active connections
 - RLS policies for public read/write access
@@ -74,6 +76,7 @@ npm install
 ### 4. Development
 
 Start the development server:
+
 ```bash
 npm run dev
 ```
@@ -122,6 +125,7 @@ The optimized build will be in the `dist/` folder, ready for deployment to Fireb
 ### Real-Time Updates
 
 The app uses Supabase's `postgres_changes` channel to listen for:
+
 - **Content updates**: When someone modifies the shared text
 - **Presence changes**: When users join or leave
 
@@ -135,6 +139,7 @@ The app uses Supabase's `postgres_changes` channel to listen for:
 ### Security
 
 All tables have Row Level Security (RLS) enabled:
+
 - Policies allow public read/write access (intentional for shared collaboration)
 - All changes are tracked with timestamps
 - Foreign key constraints prevent orphaned presence entries
@@ -151,6 +156,7 @@ firebase deploy --only hosting
 ### Other Platforms
 
 The `dist/` folder is ready for deployment to:
+
 - Vercel
 - Netlify
 - GitHub Pages
@@ -161,6 +167,7 @@ The `dist/` folder is ready for deployment to:
 ### "Room not found" error
 
 Make sure:
+
 - The room code is correct (6 characters, uppercase letters/numbers)
 - The room hasn't expired (rooms need at least one active connection to stay alive)
 - Database tables are created (see Database Setup above)
@@ -168,6 +175,7 @@ Make sure:
 ### Real-time updates not working
 
 Check:
+
 - Supabase credentials are correct in `.env`
 - Database tables exist
 - RLS policies are created
@@ -176,12 +184,14 @@ Check:
 ### Presence count not updating
 
 Verify:
+
 - Network tab in browser DevTools shows successful subscriptions
 - Supabase dashboard shows new entries in `room_presence` table
 
 ## Cost
 
 This project runs on **Supabase Free Tier** and has:
+
 - ✅ Free realtime database
 - ✅ No authentication required
 - ✅ Public RLS policies (intentional)

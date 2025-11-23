@@ -81,16 +81,19 @@ npm run build
 The `dist/` folder is ready to deploy to any static hosting:
 
 ### Firebase Hosting
+
 ```bash
 firebase deploy --only hosting
 ```
 
 ### Netlify
+
 ```bash
 netlify deploy --prod --dir=dist
 ```
 
 ### Vercel
+
 ```bash
 vercel deploy --prod
 ```
@@ -105,16 +108,19 @@ vercel deploy --prod
 ## Troubleshooting
 
 **"Room not found" when joining?**
+
 - Make sure you entered the code correctly (6 characters)
 - Room codes are case-insensitive but display as uppercase
 - The room must have at least one active connection to exist
 
 **Text not syncing?**
+
 - Check browser console for errors (F12)
 - Verify Supabase credentials in `.env`
 - Make sure database tables were created
 
 **Connection count not showing?**
+
 - Refresh the page
 - Check that `room_presence` table exists in Supabase
 

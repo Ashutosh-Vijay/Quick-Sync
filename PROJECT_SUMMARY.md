@@ -9,26 +9,31 @@ QuickSync is a fully functional real-time shared clipboard application built wit
 ### Core Features Implemented
 
 ✅ **Room Creation**
+
 - Click "Create New Room" to generate a unique 6-character alphanumeric code
 - Instant navigation to the room
 
 ✅ **Room Joining**
+
 - Enter a room code to connect to existing rooms
 - Error handling for non-existent rooms
 - Case-insensitive room codes
 
 ✅ **Real-Time Text Synchronization**
+
 - Two-way binding between textarea and Supabase database
 - Changes sync instantly across all connected clients
 - Uses Supabase Realtime subscriptions for instant updates
 
 ✅ **Live Presence Tracking**
+
 - Each connection gets a unique client ID
 - Presence entries auto-delete on disconnect
 - Footer displays live connection count
 - Real-time updates via Supabase channels
 
 ✅ **Beautiful UI**
+
 - Dark mode design with slate colors
 - Cyan accent color for interactive elements
 - Responsive layout (mobile, tablet, desktop)
@@ -38,6 +43,7 @@ QuickSync is a fully functional real-time shared clipboard application built wit
 ## Architecture
 
 ### Frontend (Vite + React)
+
 ```
 HomePage
 ├── Create Room button → generates 6-char code
@@ -52,6 +58,7 @@ RoomPage
 ```
 
 ### Backend (Supabase Realtime Database)
+
 ```
 rooms table
 ├── room_code (PK)
@@ -68,14 +75,14 @@ room_presence table
 
 ### Key Technologies
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Vite 5.4 + React 18 + TypeScript |
-| **Routing** | React Router 6 |
-| **Styling** | Tailwind CSS 3.4 |
-| **Icons** | Lucide React 0.344 |
-| **Backend** | Supabase Realtime Database |
-| **Build** | Vite (optimized production build) |
+| Layer        | Technology                        |
+| ------------ | --------------------------------- |
+| **Frontend** | Vite 5.4 + React 18 + TypeScript  |
+| **Routing**  | React Router 6                    |
+| **Styling**  | Tailwind CSS 3.4                  |
+| **Icons**    | Lucide React 0.344                |
+| **Backend**  | Supabase Realtime Database        |
+| **Build**    | Vite (optimized production build) |
 
 ## File Structure
 
@@ -136,12 +143,14 @@ src/
 ## Data Model
 
 ### rooms table
+
 - Public, shared space
 - One entry per room
 - Content field is the shared text
 - Timestamps for audit trail
 
 ### room_presence table
+
 - Tracks active connections
 - Composite unique key (room_code, client_id)
 - Auto-deletes on user leave/disconnect
@@ -169,6 +178,7 @@ src/
 ## Deployment
 
 ### Build
+
 ```bash
 npm run build
 # Output: dist/ folder (static files)
@@ -177,16 +187,19 @@ npm run build
 ### Hosting Options
 
 1. **Firebase Hosting** (Recommended for free tier)
+
    ```bash
    firebase deploy --only hosting
    ```
 
 2. **Netlify**
+
    ```bash
    netlify deploy --prod --dir=dist
    ```
 
 3. **Vercel**
+
    ```bash
    vercel deploy --prod
    ```
@@ -201,12 +214,12 @@ npm run build
 
 ### Free Tier Coverage
 
-| Service | Free Tier | Usage |
-|---------|-----------|-------|
-| **Supabase Database** | 1GB storage | ~1MB for 1K rooms |
-| **Realtime** | Unlimited connections | Real-time sync |
-| **API** | 50K req/day | Local-only in MVP |
-| **Hosting** | Firebase (5GB) | 100KB build size |
+| Service               | Free Tier             | Usage             |
+| --------------------- | --------------------- | ----------------- |
+| **Supabase Database** | 1GB storage           | ~1MB for 1K rooms |
+| **Realtime**          | Unlimited connections | Real-time sync    |
+| **API**               | 50K req/day           | Local-only in MVP |
+| **Hosting**           | Firebase (5GB)        | 100KB build size  |
 
 **Total Cost**: $0/month ✅
 
@@ -236,6 +249,7 @@ npm run build
 ## Testing
 
 The application has been tested for:
+
 - ✅ Project builds without errors
 - ✅ React Router navigation works
 - ✅ Supabase client initializes correctly

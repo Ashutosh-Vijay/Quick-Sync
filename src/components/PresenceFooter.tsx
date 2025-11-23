@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Users, Info, AlertTriangle, Flame } from 'lucide-react';
+import { Users, Info, Flame, Zap, Code2 } from 'lucide-react';
+import { ApinsityLogo } from './ApinsityLogo';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,7 @@ import {
 
 interface PresenceFooterProps {
   roomCode: string;
-  onNuke: () => void; // ✅ NEW PROP
+  onNuke: () => void;
 }
 
 function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
@@ -63,10 +64,7 @@ function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
   }, [roomCode]);
 
   const handleNuke = async () => {
-    // ✅ 1. TRIGGER UI INSTANTLY
     onNuke();
-
-    // 2. Perform actual deletion
     try {
       await supabase.from('rooms').delete().eq('room_code', roomCode);
     } catch (e) {
@@ -75,7 +73,7 @@ function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-t border-border px-4 sm:px-6 py-3 z-20">
+    <div className="fixed bottom-0 left-0 right-0 bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-t border-border px-4 sm:px-6 py-3 z-20 select-none">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 text-muted-foreground text-sm">
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-cyan-500" />
@@ -106,7 +104,7 @@ function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
                   Delete Room Forever?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This action cannot be undone. This will immediately delete all content and
+                  This action cannot be undone. This will immediately delete all content, files, and
                   disconnect all active users.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -122,31 +120,55 @@ function PresenceFooter({ roomCode, onNuke }: PresenceFooterProps) {
             </AlertDialogContent>
           </AlertDialog>
 
-          <p className="text-xs text-muted-foreground hidden md:block border-l border-border pl-3 ml-1">
-            Made by Ashutosh Vijay
-          </p>
+          <div className="hidden md:flex flex-col items-end border-l border-border pl-3 ml-1 leading-tight">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-primary/80">
+              Project Apinsity
+            </span>
+            <span className="text-[10px]">Made by Ashutosh Vijay</span>
+          </div>
+
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                 <Info className="h-4 w-4" />
-                <span className="sr-only">Disclaimer</span>
+                <span className="sr-only">Info</span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80" side="top" align="end">
-              <div className="grid gap-4">
-                <div className="space-y-2">
-                  <h4 className="font-medium leading-none">Educational Purpose</h4>
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Learning Project:</strong> This tool is for learning and demonstration
-                    only.
-                  </p>
+            <PopoverContent className="w-80 p-0 overflow-hidden" side="top" align="end">
+              <div className="bg-muted/50 p-4 border-b">
+                <h4 className="font-medium flex items-center gap-2">
+                  <ApinsityLogo className="h-4 w-4" withText={false} />
+                  QuickSync
+                </h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  A sub-project under Project Apinsity.
+                </p>
+              </div>
+              <div className="p-4 space-y-4 text-sm">
+                <div className="flex gap-3">
+                  <Code2 className="w-5 h-5 text-blue-500 shrink-0" />
+                  <div>
+                    <p className="font-medium text-foreground">Developer-Centric</p>
+                    <p className="text-xs text-muted-foreground">
+                      Part of a suite of high-utility tools built for developer efficiency and data
+                      flexibility.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-start gap-2 text-destructive">
-                  <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm font-medium">
-                    Do not use for confidential or production data.
-                  </p>
+                <div className="flex gap-3">
+                  <Zap className="w-5 h-5 text-yellow-500 shrink-0" />
+                  <div>
+                    <p className="font-medium text-foreground">Ephemeral by Nature</p>
+                    <p className="text-xs text-muted-foreground">
+                      Nothing is stored permanently. Use the{' '}
+                      <strong className="text-red-500">Nuke</strong> button to instantly wipe the
+                      database clean.
+                    </p>
+                  </div>
                 </div>
+              </div>
+              <div className="bg-muted/30 p-3 text-center border-t text-[10px] text-muted-foreground">
+                A Hobby Project part of Project Apinsity by Ashutosh Vijay
               </div>
             </PopoverContent>
           </Popover>

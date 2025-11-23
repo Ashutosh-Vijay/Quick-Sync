@@ -29,7 +29,7 @@
   }
 
   .dark {
-    --background: 227 13% 16%;
+    --background: 227 13% 10%;
     --foreground: 210 40% 98%;
     --card: 227 13% 20%;
     --card-foreground: 210 40% 98%;
@@ -57,39 +57,24 @@
   }
 
   body {
-    @apply text-foreground;
-    background: linear-gradient(-45deg, #1d2238, #f8cdda, #2d3f86, #f8cdda);
-    background-size: 400% 400%;
-    animation: gradient 25s ease infinite;
+    @apply text-foreground bg-background;
+    /* Light Mode: A warm, premium "Sunrise" gradient instead of clinical blue */
+    background: radial-gradient(at top left, #fff1eb, #ace0f9);
     transition: background 0.5s ease;
   }
 
   .dark body {
-    background: linear-gradient(-45deg, #000428, #004e92, #000428, #ffc371);
-    background-size: 400% 400%;
-    animation: gradient 30s ease infinite;
+    /* Dark Mode: Deep Space */
+    background: linear-gradient(to bottom right, #020617, #0f172a);
   }
 
+  /* Boring Mode - Light */
   body.boring-mode {
-    background: #ffffff !important;
-    animation: none !important;
+    background: #f8fafc !important; /* Slate-50 */
   }
 
+  /* Boring Mode - Dark (Pitch Black as requested) */
   .dark body.boring-mode {
     background: #000000 !important;
-  }
-}
-
-@keyframes gradient {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
   }
 }

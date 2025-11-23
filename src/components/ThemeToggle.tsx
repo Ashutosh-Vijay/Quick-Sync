@@ -44,15 +44,18 @@ export function ThemeToggle() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="icon" className="relative">
+        <Button
+          variant="outline"
+          size="icon"
+          className="relative rounded-full bg-background/20 backdrop-blur-md border-white/10 hover:bg-background/40 shadow-sm"
+        >
           {/* Sun/Moon Icons */}
           <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
           <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
 
-          {/* Indicator for Boring Mode */}
+          {/* Indicator for Reduced Motion (Static Dot, no ping) */}
           {isBoring && (
             <span className="absolute -top-1 -right-1 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500"></span>
             </span>
           )}
@@ -72,10 +75,10 @@ export function ThemeToggle() {
 
         <DropdownMenuSeparator />
 
-        {/* The "Make it Boring" Toggle */}
+        {/* Renamed to professional labels */}
         <DropdownMenuItem
           onClick={(e) => {
-            e.preventDefault(); // Prevent closing so they can see it toggle
+            e.preventDefault(); // Prevent closing
             toggleBoringMode();
           }}
           className="cursor-pointer"
@@ -83,12 +86,12 @@ export function ThemeToggle() {
           {isBoring ? (
             <>
               <Zap className="mr-2 h-4 w-4 text-yellow-500" />
-              Enable Fun UI
+              Enable Effects
             </>
           ) : (
             <>
               <ZapOff className="mr-2 h-4 w-4 text-muted-foreground" />
-              Disable Animations
+              Disable Effects
             </>
           )}
         </DropdownMenuItem>

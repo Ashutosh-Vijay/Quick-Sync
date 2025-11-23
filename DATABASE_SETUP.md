@@ -74,12 +74,14 @@ CREATE INDEX IF NOT EXISTS idx_room_presence_room_code ON room_presence(room_cod
 ## What These Tables Do
 
 ### rooms
+
 - `room_code`: Unique 6-character room identifier (PRIMARY KEY)
 - `content`: Shared text content that syncs across all clients
 - `created_at`: When the room was created
 - `updated_at`: When content was last modified
 
 ### room_presence
+
 - `id`: Unique identifier for each presence entry
 - `room_code`: References the room
 - `client_id`: Unique session identifier for connected users
@@ -93,6 +95,7 @@ All policies allow public read/write access because this is a shared clipboard a
 ## After Setup
 
 The application should work immediately. You can now:
+
 1. Create rooms that generate 6-character codes
 2. Join existing rooms with the code
 3. Share text in real-time
