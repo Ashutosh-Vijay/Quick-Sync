@@ -21,8 +21,12 @@ export const wrapPayload = (cipherText: string): string => {
 export const unwrapPayload = (rawContent: string): string => {
   try {
     const json = JSON.parse(rawContent);
-    // If it has our specific key, it's ours. Otherwise, assume raw text.
-    return json.trace_blob || rawContent;
+    // FIX: Explicitly check if trace_blob exists, because "" is falsy in JS
+    // and 'json.trace_blob || rawContent' causes the bug on empty strings.
+    if (json && typeof json === 'object' && 'trace_blob' in json) {
+      return json.trace_blob;
+    }
+    return rawContent;
   } catch {
     return rawContent;
   }

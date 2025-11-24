@@ -56,28 +56,19 @@ export interface Database {
         Row: {
           id: string;
           room_code: string;
-          file_url: string;
-          file_name: string;
-          file_size: string;
-          file_type: string | null;
+          file_data: string; // The single blob payload
           uploaded_at: string;
         };
         Insert: {
           id?: string;
           room_code: string;
-          file_url: string;
-          file_name: string;
-          file_size: string;
-          file_type?: string | null;
+          file_data: string;
           uploaded_at?: string;
         };
         Update: {
           id?: string;
           room_code?: string;
-          file_url?: string;
-          file_name?: string;
-          file_size?: string;
-          file_type?: string | null;
+          file_data?: string;
           uploaded_at?: string;
         };
         Relationships: [

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { decryptData } from '@/lib/crypto';
+import { unwrapPayload } from '@/lib/payloadHelper';
 import {
   Download,
   Trash2,
@@ -20,7 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-  SheetDescription, // 1. IMPORT THIS
+  SheetDescription,
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -28,7 +29,17 @@ import { useFileUpload } from '@/hooks/useFileUpload';
 import { Progress } from '@/components/ui/progress';
 import * as CryptoJS from 'crypto-js';
 
-type FileRecord = Database['public']['Tables']['room_files']['Row'];
+type FileRow = Database['public']['Tables']['room_files']['Row'];
+
+// UI Model (Decrypted)
+interface FileRecord {
+  id: string;
+  name: string;
+  size: string;
+  type: string;
+  url: string;
+  uploaded_at: string;
+}
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString);
@@ -54,7 +65,8 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { uploadFile, isUploading, progress } = useFileUpload({
+  // FIX: Single hook instance for both state and action
+  const { isUploading, progress, uploadFile } = useFileUpload({
     roomCode,
     secretKey,
     onUploadComplete: () => {
@@ -62,6 +74,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
     },
   });
 
+  // FIX: Used proper handler to avoid inline mess and unused var errors
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -71,6 +84,27 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   useEffect(() => {
     if (!roomCode) return;
 
+    // FIX: Moved helper inside useEffect to capture 'secretKey' without dependency issues
+    const parseFileRecord = (row: FileRow): FileRecord | null => {
+      try {
+        const encryptedMeta = unwrapPayload(row.file_data);
+        const metaString = decryptData(encryptedMeta, secretKey);
+        const meta = JSON.parse(metaString);
+
+        return {
+          id: row.id,
+          name: meta.n || 'Unknown',
+          size: meta.s || '?',
+          type: meta.t || 'application/octet-stream',
+          url: meta.u || '',
+          uploaded_at: row.uploaded_at,
+        };
+      } catch (e) {
+        console.error('Failed to parse file record', e);
+        return null;
+      }
+    };
+
     const fetchFiles = async () => {
       const { data } = await supabase
         .from('room_files')
@@ -78,7 +112,10 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
         .eq('room_code', roomCode)
         .order('uploaded_at', { ascending: false });
 
-      if (data) setFiles(data);
+      if (data) {
+        const parsed = data.map(parseFileRecord).filter((f): f is FileRecord => f !== null);
+        setFiles(parsed);
+      }
     };
     fetchFiles();
 
@@ -93,21 +130,20 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
           filter: `room_code=eq.${roomCode}`,
         },
         (payload) => {
-          setFiles((prev) => {
-            if (prev.some((f) => f.id === payload.new.id)) return prev;
-            return [payload.new as FileRecord, ...prev];
-          });
+          const newFile = parseFileRecord(payload.new as FileRow);
+          if (newFile) {
+            setFiles((prev) => {
+              if (prev.some((f) => f.id === newFile.id)) return prev;
+              return [newFile, ...prev];
+            });
+          }
         }
       )
       .on(
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'room_files' },
         (payload) => {
-          setFiles((prev) => {
-            const exists = prev.some((f) => f.id === payload.old.id);
-            if (!exists) return prev;
-            return prev.filter((f) => f.id !== payload.old.id);
-          });
+          setFiles((prev) => prev.filter((f) => f.id !== payload.old.id));
         }
       )
       .subscribe();
@@ -115,9 +151,9 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomCode]);
+  }, [roomCode, secretKey]);
 
-  const handleDelete = async (id: string, _url: string) => {
+  const handleDelete = async (id: string) => {
     const previousFiles = [...files];
     setFiles((prev) => prev.filter((f) => f.id !== id));
 
@@ -134,7 +170,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const handleDownload = async (file: FileRecord) => {
     setDownloadingId(file.id);
     try {
-      const response = await fetch(file.file_url);
+      const response = await fetch(file.url);
       const content = await response.text();
 
       let byteArray: Uint8Array;
@@ -156,18 +192,13 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
         }
       }
 
-      const fileType = file.file_type
-        ? decryptData(file.file_type, secretKey)
-        : 'application/octet-stream';
-
-      const fileName = decryptData(file.file_name, secretKey) || 'downloaded-file';
-
-      const blob = new Blob([byteArray as unknown as BlobPart], { type: fileType });
-
+      const blob = new Blob([byteArray as unknown as BlobPart], {
+        type: file.type,
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName;
+      a.download = file.name;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -203,7 +234,6 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
           <SheetTitle className="flex items-center gap-2">
             <FolderOpen className="w-5 h-5" /> Shared Files
           </SheetTitle>
-          {/* 2. ADD THIS TO SHUT UP THE CONSOLE */}
           <SheetDescription className="sr-only">
             View, upload, and download shared files in this room.
           </SheetDescription>
@@ -215,7 +245,11 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
           {files.length === 0 ? (
             <div
               className={`flex flex-col items-center justify-center h-40 text-muted-foreground text-sm border-2 border-dashed rounded-lg transition-colors
-                  ${isUploading ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50 hover:border-primary/50 cursor-pointer'}
+                  ${
+                    isUploading
+                      ? 'bg-primary/5 border-primary/30'
+                      : 'hover:bg-muted/50 hover:border-primary/50 cursor-pointer'
+                  }
                 `}
               onClick={() => !isUploading && fileInputRef.current?.click()}
             >
@@ -245,71 +279,68 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
                 </div>
               )}
 
-              {files.map((file) => {
-                const displayName = decryptData(file.file_name, secretKey);
-                return (
-                  <div
-                    key={file.id}
-                    className="group flex flex-col bg-card border rounded-lg p-3 gap-2 hover:border-primary/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div
-                          className={`p-2 rounded-md ${secretKey ? 'bg-green-500/10' : 'bg-blue-500/10'}`}
-                        >
-                          {secretKey ? (
-                            <ShieldCheck className="w-4 h-4 text-green-500" />
-                          ) : (
-                            <Globe className="w-4 h-4 text-blue-500" />
-                          )}
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-medium text-sm truncate" title={displayName}>
-                            {displayName}
+              {files.map((file) => (
+                <div
+                  key={file.id}
+                  className="group flex flex-col bg-card border rounded-lg p-3 gap-2 hover:border-primary/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <div
+                        className={`p-2 rounded-md ${
+                          secretKey ? 'bg-green-500/10' : 'bg-blue-500/10'
+                        }`}
+                      >
+                        {secretKey ? (
+                          <ShieldCheck className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <Globe className="w-4 h-4 text-blue-500" />
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium text-sm truncate" title={file.name}>
+                          {file.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{file.size}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" /> {timeAgo(file.uploaded_at)}
                           </span>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{file.file_size}</span>
-                            <span>•</span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" /> {timeAgo(file.uploaded_at)}
-                            </span>
-                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      {/* Responsive Download Button: Full width on mobile, auto on desktop */}
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="flex-1 h-9 gap-2"
-                        onClick={() => handleDownload(file)}
-                        disabled={downloadingId === file.id}
-                      >
-                        {downloadingId === file.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                        <span className={downloadingId === file.id ? 'inline' : 'inline'}>
-                          {downloadingId === file.id ? 'Decrypting...' : 'Download'}
-                        </span>
-                      </Button>
-
-                      {/* Delete Button: Always square */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                        onClick={() => handleDelete(file.id, file.file_url)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span className="sr-only">Delete</span>
-                      </Button>
-                    </div>
                   </div>
-                );
-              })}
+                  <div className="flex items-center gap-2 mt-1">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="flex-1 h-9 gap-2"
+                      onClick={() => handleDownload(file)}
+                      disabled={downloadingId === file.id}
+                    >
+                      {downloadingId === file.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      <span className={downloadingId === file.id ? 'inline' : 'inline'}>
+                        {downloadingId === file.id ? 'Decrypting...' : 'Download'}
+                      </span>
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                      onClick={() => handleDelete(file.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </ScrollArea>
