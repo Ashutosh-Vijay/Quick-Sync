@@ -1,33 +1,30 @@
 /**
- * Wraps ciphertext in a fake telemetry object to confuse packet sniffers.
- * Look busy, Jesus is coming.
+ * Wraps ciphertext.
+ * Previously used for "fake telemetry" obfuscation.
+ * Now simplified to a pass-through to reduce bandwidth/CPU overhead.
  */
 export const wrapPayload = (cipherText: string): string => {
-  return JSON.stringify({
-    v: 2,
-    level: 'INFO',
-    service: 'mule-diagnostic-agent',
-    trace_id: crypto.randomUUID(),
-    span_id: Math.floor(Math.random() * 1000000).toString(),
-    timestamp: new Date().toISOString(),
-    trace_blob: cipherText,
-  });
+  // Just return the encrypted/base64 string directly.
+  // No more JSON, no more UUID generation, no more larping.
+  return cipherText;
 };
 
 /**
- * Extracts the actual ciphertext from the fake telemetry object.
- * Returns the raw string if it wasn't valid JSON (backward compatibility).
+ * Extracts the actual ciphertext.
+ * Handles both legacy "spy" packets (JSON) and new raw packets.
  */
 export const unwrapPayload = (rawContent: string): string => {
   try {
+    // Check if it's a legacy "spy" packet (JSON)
+    // If we can parse it and it has the blob, extract it.
     const json = JSON.parse(rawContent);
-    // FIX: Explicitly check if trace_blob exists, because "" is falsy in JS
-    // and 'json.trace_blob || rawContent' causes the bug on empty strings.
     if (json && typeof json === 'object' && 'trace_blob' in json) {
       return json.trace_blob;
     }
+    // If it's valid JSON but not our spy packet, or just a string, return raw.
     return rawContent;
   } catch {
+    // If it's not JSON (e.g. raw Base64/AES string), just return it.
     return rawContent;
   }
 };

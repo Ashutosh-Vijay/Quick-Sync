@@ -5,6 +5,11 @@ import { wrapPayload } from '@/lib/payloadHelper';
 import { useToast } from '@/hooks/use-toast';
 import * as CryptoJS from 'crypto-js';
 
+// LIMIT UPGRADE: 50MB
+// (Supabase Free Tier global limit is usually 50MB per file)
+const MAX_FILE_SIZE_MB = 50;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 interface UseFileUploadProps {
   roomCode: string;
   secretKey: string | null;
@@ -46,8 +51,11 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
   };
 
   const uploadFile = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ variant: 'destructive', description: 'File too large. Max 10MB.' });
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      toast({
+        variant: 'destructive',
+        description: `File too chonky. Max ${MAX_FILE_SIZE_MB}MB. 📉`,
+      });
       return;
     }
 
@@ -69,10 +77,15 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
       }
 
       // 1. Upload the actual blob (Storage)
-      // We still use obscure filenames to prevent path guessing
       const timestamp = Date.now();
       const boringName = `sys_log_dump_${timestamp}.dat`;
-      const uniqueId = crypto.randomUUID();
+
+      // FIX: UUID Fallback for HTTP contexts
+      const uniqueId =
+        typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : 'uuid-' + Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+
       const filePath = `${roomCode}/${uniqueId}/${boringName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -90,7 +103,6 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
       const { data } = supabase.storage.from('quick-share').getPublicUrl(filePath);
 
       // 2. Prepare the Stealth Metadata
-      // We rename keys to garbage to look like generic state sync
       const meta = {
         n: file.name, // n = name
         s: (file.size / 1024 / 1024).toFixed(2) + ' MB', // s = size
@@ -99,24 +111,22 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
       };
 
       // 3. Encrypt the Metadata Object
-      // This hides the structure. The network just sees a random string.
       const metaString = JSON.stringify(meta);
       const encryptedMeta = encryptData(metaString, secretKey);
 
       // 4. Wrap in Fake Telemetry
-      // "Look busy, Jesus is coming"
       const payload = wrapPayload(encryptedMeta);
 
       const { error: dbError } = await supabase.from('room_files').insert({
         room_code: roomCode,
-        file_data: payload, // <--- ONE KEY TO RULE THEM ALL
+        file_data: payload,
       });
 
       if (dbError) throw dbError;
 
       setProgress(100);
       toast({
-        description: secretKey ? 'Encrypted & Synced!' : 'Obfuscated & Synced!',
+        description: secretKey ? 'Encrypted & Synced! 🔒' : 'Obfuscated & Synced! 🌐',
       });
       onUploadComplete?.();
     } catch (error: unknown) {
