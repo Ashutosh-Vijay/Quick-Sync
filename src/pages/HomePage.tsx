@@ -366,7 +366,7 @@ export default function HomePage() {
         <footer className="w-full max-w-6xl mx-auto flex shrink-0 items-center justify-between text-xs text-muted-foreground/60 pb-4 sm:pb-10 z-20 pointer-events-none">
           <div className="flex items-center gap-2 pointer-events-auto hover:text-foreground transition-colors">
             <Sparkles className="w-3 h-3 text-yellow-500/70" />
-            <span>Developed by Ashutosh Vijay</span>
+            <span>Developed by Asura</span>
           </div>
           <Popover>
             <PopoverTrigger asChild>
