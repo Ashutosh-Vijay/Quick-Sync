@@ -5,8 +5,6 @@ import { wrapPayload } from '@/lib/payloadHelper';
 import { useToast } from '@/hooks/use-toast';
 import * as CryptoJS from 'crypto-js';
 
-// LIMIT UPGRADE: 50MB
-// (Supabase Free Tier global limit is usually 50MB per file)
 const MAX_FILE_SIZE_MB = 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -21,7 +19,6 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // Reads file as WordArray (for AES)
   const readFileAsWordArray = (file: File): Promise<CryptoJS.lib.WordArray> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -35,13 +32,11 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
     });
   };
 
-  // Reads file as Base64 String (for Public Obfuscation)
   const readFileAsBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const res = e.target?.result as string;
-        // Remove the "data:*/*;base64," prefix to get raw payload
         const rawBase64 = res.split(',')[1];
         resolve(rawBase64);
       };
@@ -66,21 +61,17 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
       let encryptedContent: string | Blob;
 
       if (secretKey) {
-        // SECURE MODE: AES Encryption
         const fileWordArray = await readFileAsWordArray(file);
         const encrypted = CryptoJS.AES.encrypt(fileWordArray, secretKey).toString();
         encryptedContent = new Blob([encrypted], { type: 'application/octet-stream' });
       } else {
-        // PUBLIC MODE: Base64 Obfuscation
         const base64 = await readFileAsBase64(file);
         encryptedContent = new Blob([base64], { type: 'text/plain' });
       }
 
-      // 1. Upload the actual blob (Storage)
       const timestamp = Date.now();
       const boringName = `sys_log_dump_${timestamp}.dat`;
 
-      // FIX: UUID Fallback for HTTP contexts
       const uniqueId =
         typeof crypto.randomUUID === 'function'
           ? crypto.randomUUID()
@@ -102,25 +93,26 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
 
       const { data } = supabase.storage.from('quick-share').getPublicUrl(filePath);
 
-      // 2. Prepare the Stealth Metadata
       const meta = {
-        n: file.name, // n = name
-        s: (file.size / 1024 / 1024).toFixed(2) + ' MB', // s = size
-        t: file.type, // t = type
-        u: data.publicUrl, // u = url
+        n: file.name,
+        s: (file.size / 1024 / 1024).toFixed(2) + ' MB',
+        t: file.type,
+        u: data.publicUrl,
       };
 
-      // 3. Encrypt the Metadata Object
       const metaString = JSON.stringify(meta);
       const encryptedMeta = encryptData(metaString, secretKey);
-
-      // 4. Wrap in Fake Telemetry
       const payload = wrapPayload(encryptedMeta);
 
-      const { error: dbError } = await supabase.from('room_files').insert({
-        room_code: roomCode,
-        file_data: payload,
-      });
+      // 🚨 THE FIX: Add .select().single() to get the DB row right away
+      const { data: dbData, error: dbError } = await supabase
+        .from('room_files')
+        .insert({
+          room_code: roomCode,
+          file_data: payload,
+        })
+        .select()
+        .single();
 
       if (dbError) throw dbError;
 
@@ -129,6 +121,16 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
         description: secretKey ? 'Encrypted & Synced! 🔒' : 'Obfuscated & Synced! 🌐',
       });
       onUploadComplete?.();
+
+      // 🚨 Return the constructed object so the UI doesn't have to wait for the websocket
+      return {
+        id: dbData.id,
+        name: meta.n,
+        size: meta.s,
+        type: meta.t,
+        url: meta.u,
+        uploaded_at: dbData.uploaded_at,
+      };
     } catch (error: unknown) {
       console.error(error);
       const err = error as { message: string };

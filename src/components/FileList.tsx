@@ -78,7 +78,18 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
-    await uploadFile(file);
+
+    // Catch the returned file
+    const newFile = await uploadFile(file);
+
+    // Optimistic UI update: instantly slam it into the list
+    if (newFile) {
+      setFiles((prev) => {
+        // Double-check just in case the websocket beat us to it (rare, but possible)
+        if (prev.some((f) => f.id === newFile.id)) return prev;
+        return [newFile, ...prev];
+      });
+    }
   };
 
   useEffect(() => {
