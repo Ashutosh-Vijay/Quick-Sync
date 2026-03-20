@@ -21,7 +21,12 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.exclusion_settings.json
 exclusion_settings.json
+
+# Claude
+.claude/
+CLAUDE.md
 
 test-results/
 playwright-report/

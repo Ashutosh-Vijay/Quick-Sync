@@ -167,6 +167,16 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
             },
             () => fetchLatestContent()
           )
+          .on(
+            'postgres_changes',
+            {
+              event: 'DELETE',
+              schema: 'public',
+              table: 'rooms',
+              filter: `room_code=eq.${roomCode}`,
+            },
+            () => setNuked(true)
+          )
           .subscribe((status) => {
             if (status === 'SUBSCRIBED') {
               setConnected(true);

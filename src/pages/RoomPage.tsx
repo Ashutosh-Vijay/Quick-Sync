@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
 import { getKeyFromHash } from '@/lib/crypto';
+import { supabase } from '@/lib/supabase';
 import { useRoomConnection } from '@/hooks/useRoomConnection';
 import { useRoomStore } from '@/store/roomStore';
 import { FileShare } from '@/components/FileShare';
@@ -45,6 +46,7 @@ import {
   WifiOff,
   Key,
   Share2,
+  Flame,
 } from 'lucide-react';
 
 const HISTORY_LIMIT = 10;
@@ -60,7 +62,7 @@ export default function RoomPage() {
   const navigate = useNavigate();
   const location = useLocation(); // Hook to listen to URL changes
   const { toast } = useToast();
-  const { isNuked, isLocked, setLocked } = useRoomStore();
+  const { isNuked, setNuked, isLocked, setLocked } = useRoomStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // FIX: Make secretKey reactive to location changes
@@ -74,6 +76,8 @@ export default function RoomPage() {
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [future, setFuture] = useState<string[]>([]); // Redo Stack
+  const [destructOpen, setDestructOpen] = useState(false);
+  const [isDestructing, setIsDestructing] = useState(false);
   const isUndoingRedoing = useRef(false); // Flag to prevent history loops
 
   // History management
@@ -174,6 +178,36 @@ export default function RoomPage() {
     toast({ variant: 'destructive', description: 'Cleared!' });
   };
 
+  const handleDestructRoom = async () => {
+    if (!roomCode) return;
+    setIsDestructing(true);
+    try {
+      const { data: folders } = await supabase.storage.from('quick-share').list(roomCode);
+      if (folders && folders.length > 0) {
+        const paths: string[] = [];
+        for (const folder of folders) {
+          const { data: files } = await supabase.storage
+            .from('quick-share')
+            .list(`${roomCode}/${folder.name}`);
+          (files ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
+        }
+        if (paths.length > 0) {
+          await supabase.storage.from('quick-share').remove(paths);
+        }
+      }
+      await supabase.from('room_files').delete().eq('room_code', roomCode);
+      await supabase.from('room_presence').delete().eq('room_code', roomCode);
+      await supabase.from('rooms').delete().eq('room_code', roomCode);
+      setDestructOpen(false);
+      setNuked(true);
+    } catch (err) {
+      console.error('Destruct failed:', err);
+      toast({ variant: 'destructive', description: 'Destruct failed. Try again.' });
+    } finally {
+      setIsDestructing(false);
+    }
+  };
+
   if (isLoading)
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -270,6 +304,15 @@ export default function RoomPage() {
           <span className="hidden lg:inline">Share</span>
         </Button>
       </ShareDialog>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+        onClick={() => setDestructOpen(true)}
+      >
+        <Flame className="w-4 h-4" />
+        <span className="hidden lg:inline">Destruct</span>
+      </Button>
       <div className="hidden justify-end sm:flex ml-2 items-center">
         {syncError ? (
           <span className="text-xs text-red-500 font-bold flex items-center animate-pulse whitespace-nowrap">
@@ -321,6 +364,18 @@ export default function RoomPage() {
                 <QrCode className="w-4 h-4" /> Share Room
               </Button>
             </ShareDialog>
+          </div>
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Danger Zone
+            </Label>
+            <Button
+              variant="destructive"
+              className="w-full gap-2"
+              onClick={() => setDestructOpen(true)}
+            >
+              <Flame className="w-4 h-4" /> Destruct Room
+            </Button>
           </div>
         </div>
       </SheetContent>
@@ -449,6 +504,42 @@ export default function RoomPage() {
           </div>
         </div>
       </main>
+      <Dialog open={destructOpen} onOpenChange={setDestructOpen}>
+        <DialogContent className="sm:max-w-sm select-none">
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Flame className="w-5 h-5" /> Destruct Room
+            </DialogTitle>
+            <DialogDescription>
+              Permanently deletes this room, all content, and all uploaded files from storage. This
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setDestructOpen(false)}
+              disabled={isDestructing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 gap-2"
+              disabled={isDestructing}
+              onClick={handleDestructRoom}
+            >
+              {isDestructing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Flame className="w-4 h-4" />
+              )}
+              {isDestructing ? 'Destructing...' : 'Confirm'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Toaster />
     </div>
   );

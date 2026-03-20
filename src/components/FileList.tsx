@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Globe,
   UploadCloud,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -53,6 +54,12 @@ function timeAgo(dateString: string) {
   return date.toLocaleDateString();
 }
 
+function storagePathFromUrl(url: string): string | null {
+  const marker = '/quick-share/';
+  const idx = url.indexOf(marker);
+  return idx === -1 ? null : url.slice(idx + marker.length);
+}
+
 interface FileListProps {
   roomCode: string;
   secretKey: string | null;
@@ -63,9 +70,10 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [open, setOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isClearingAll, setIsClearingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // FIX: Single hook instance for both state and action
   const { isUploading, progress, uploadFile } = useFileUpload({
     roomCode,
     secretKey,
@@ -74,18 +82,12 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
     },
   });
 
-  // FIX: Used proper handler to avoid inline mess and unused var errors
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
-
-    // Catch the returned file
     const newFile = await uploadFile(file);
-
-    // Optimistic UI update: instantly slam it into the list
     if (newFile) {
       setFiles((prev) => {
-        // Double-check just in case the websocket beat us to it (rare, but possible)
         if (prev.some((f) => f.id === newFile.id)) return prev;
         return [newFile, ...prev];
       });
@@ -95,13 +97,11 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   useEffect(() => {
     if (!roomCode) return;
 
-    // FIX: Moved helper inside useEffect to capture 'secretKey' without dependency issues
     const parseFileRecord = (row: FileRow): FileRecord | null => {
       try {
         const encryptedMeta = unwrapPayload(row.file_data);
         const metaString = decryptData(encryptedMeta, secretKey);
         const meta = JSON.parse(metaString);
-
         return {
           id: row.id,
           name: meta.n || 'Unknown',
@@ -165,16 +165,53 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   }, [roomCode, secretKey]);
 
   const handleDelete = async (id: string) => {
+    const file = files.find((f) => f.id === id);
     const previousFiles = [...files];
     setFiles((prev) => prev.filter((f) => f.id !== id));
+    if (expandedId === id) setExpandedId(null);
 
     try {
+      // Delete from storage first
+      if (file) {
+        const storagePath = storagePathFromUrl(file.url);
+        if (storagePath) {
+          await supabase.storage.from('quick-share').remove([storagePath]);
+        }
+      }
       const { error } = await supabase.from('room_files').delete().eq('id', id);
       if (error) throw error;
     } catch (error) {
       console.error('Delete failed:', error);
       setFiles(previousFiles);
       toast({ variant: 'destructive', description: 'Failed to delete file.' });
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setIsClearingAll(true);
+    try {
+      const { data: folders } = await supabase.storage.from('quick-share').list(roomCode);
+      if (folders && folders.length > 0) {
+        const paths: string[] = [];
+        for (const folder of folders) {
+          const { data: storageFiles } = await supabase.storage
+            .from('quick-share')
+            .list(`${roomCode}/${folder.name}`);
+          (storageFiles ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
+        }
+        if (paths.length > 0) {
+          await supabase.storage.from('quick-share').remove(paths);
+        }
+      }
+      await supabase.from('room_files').delete().eq('room_code', roomCode);
+      setFiles([]);
+      setExpandedId(null);
+      toast({ description: 'All files cleared.' });
+    } catch (error) {
+      console.error('Clear all failed:', error);
+      toast({ variant: 'destructive', description: 'Failed to clear files.' });
+    } finally {
+      setIsClearingAll(false);
     }
   };
 
@@ -203,9 +240,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
         }
       }
 
-      const blob = new Blob([byteArray as unknown as BlobPart], {
-        type: file.type,
-      });
+      const blob = new Blob([byteArray as unknown as BlobPart], { type: file.type });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -242,9 +277,27 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
       </SheetTrigger>
       <SheetContent className="select-none w-[90%] sm:w-[540px]">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <FolderOpen className="w-5 h-5" /> Shared Files
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5" /> Shared Files
+            </SheetTitle>
+            {files.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 text-xs h-8"
+                onClick={handleDeleteAll}
+                disabled={isClearingAll}
+              >
+                {isClearingAll ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                Clear All
+              </Button>
+            )}
+          </div>
           <SheetDescription className="sr-only">
             View, upload, and download shared files in this room.
           </SheetDescription>
@@ -252,7 +305,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
 
         <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
 
-        <ScrollArea className="h-[calc(100vh-8rem)] mt-4 pr-4">
+        <ScrollArea className="h-[calc(100vh-8rem)] mt-4 pr-4 overflow-x-hidden">
           {files.length === 0 ? (
             <div
               className={`flex flex-col items-center justify-center h-40 text-muted-foreground text-sm border-2 border-dashed rounded-lg transition-colors
@@ -290,15 +343,20 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
                 </div>
               )}
 
-              {files.map((file) => (
-                <div
-                  key={file.id}
-                  className="group flex flex-col bg-card border rounded-lg p-3 gap-2 hover:border-primary/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2 overflow-hidden">
+              {files.map((file) => {
+                const isExpanded = expandedId === file.id;
+                return (
+                  <div
+                    key={file.id}
+                    className="flex flex-col bg-card border rounded-lg overflow-hidden hover:border-primary/50 transition-colors w-full"
+                  >
+                    {/* Clickable info row — toggles expand */}
+                    <div
+                      className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                      onClick={() => setExpandedId(isExpanded ? null : file.id)}
+                    >
                       <div
-                        className={`p-2 rounded-md ${
+                        className={`p-2 rounded-md shrink-0 ${
                           secretKey ? 'bg-green-500/10' : 'bg-blue-500/10'
                         }`}
                       >
@@ -308,7 +366,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
                           <Globe className="w-4 h-4 text-blue-500" />
                         )}
                       </div>
-                      <div className="flex flex-col min-w-0">
+                      <div className="flex flex-col min-w-0 flex-1">
                         <span className="font-medium text-sm truncate" title={file.name}>
                           {file.name}
                         </span>
@@ -320,38 +378,45 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
                           </span>
                         </div>
                       </div>
+                      <ChevronDown
+                        className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2 px-3 pb-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="flex-1 h-9 gap-2"
+                        onClick={() => handleDownload(file)}
+                        disabled={downloadingId === file.id}
+                      >
+                        {downloadingId === file.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                        {downloadingId === file.id ? 'Decrypting...' : 'Download'}
+                      </Button>
+
+                      {isExpanded && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="h-9 gap-2 animate-in fade-in duration-150"
+                          onClick={() => handleDelete(file.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="flex-1 h-9 gap-2"
-                      onClick={() => handleDownload(file)}
-                      disabled={downloadingId === file.id}
-                    >
-                      {downloadingId === file.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4" />
-                      )}
-                      <span className={downloadingId === file.id ? 'inline' : 'inline'}>
-                        {downloadingId === file.id ? 'Decrypting...' : 'Download'}
-                      </span>
-                    </Button>
-
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-9 w-9 p-0 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                      onClick={() => handleDelete(file.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </ScrollArea>

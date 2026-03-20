@@ -108,6 +108,12 @@ export default function HomePage() {
         return;
       }
 
+      // Admin room bypasses DB check
+      if (code === 'XX13XX') {
+        navigate('/room/XX13XX');
+        return;
+      }
+
       const { data, error } = await supabase
         .from('rooms')
         .select('room_code')
