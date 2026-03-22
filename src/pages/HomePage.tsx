@@ -1,6 +1,6 @@
-// ... existing imports ...
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { generateRoomId } from '@/lib/utils';
 import { generateKey } from '@/lib/crypto';
@@ -28,9 +28,57 @@ interface HistoryItem {
   timestamp: number;
 }
 
+// Framer Motion orchestration
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.12,
+      delayChildren: 0.2,
+    },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 30, filter: 'blur(10px)' },
+  visible: {
+    opacity: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    transition: {
+      duration: 0.7,
+      ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
+    },
+  },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 40, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      duration: 0.8,
+      ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
+      staggerChildren: 0.08,
+      delayChildren: 0.1,
+    },
+  },
+};
+
+const buttonItemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5 },
+  },
+};
+
 export default function HomePage() {
   const navigate = useNavigate();
-  // ... existing state ...
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -108,7 +156,6 @@ export default function HomePage() {
         return;
       }
 
-      // Admin room bypasses DB check
       if (code === 'XX13XX') {
         navigate('/room/XX13XX');
         return;
@@ -152,51 +199,19 @@ export default function HomePage() {
   const isLoading = isCreating || isJoining;
 
   return (
-    // FIX: Back to h-[100dvh] and overflow-hidden to kill the window scrollbar.
-    // We handle scrolling internally now.
     <div className="relative h-[100dvh] w-full overflow-hidden select-none">
-      <style>{`
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
-          100% { transform: translateY(0px); }
-        }
-        .animate-float {
-          animation: float 6s ease-in-out infinite;
-        }
-        .glass-panel {
-          background: rgba(255, 255, 255, 0.08);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
-        }
-        .dark .glass-panel {
-          background: rgba(0, 0, 0, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        }
-      `}</style>
-
-      {/* FALLBACK BLOBS */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 hidden [.boring-mode_&]:block">
-        <div className="absolute top-[-10%] left-[-20%] w-96 h-96 sm:w-[40vw] sm:h-[40vw] rounded-full bg-purple-500/30 dark:bg-purple-900/30 blur-[80px] sm:blur-[100px] mix-blend-overlay dark:mix-blend-screen" />
-        <div className="absolute top-[20%] right-[-20%] w-80 h-80 sm:w-[35vw] sm:h-[35vw] rounded-full bg-cyan-500/30 dark:bg-cyan-900/30 blur-[80px] sm:blur-[100px] mix-blend-overlay dark:mix-blend-screen" />
-        <div className="absolute bottom-[-10%] left-[10%] w-96 h-96 sm:w-[45vw] sm:h-[45vw] rounded-full bg-blue-500/30 dark:bg-blue-900/30 blur-[80px] sm:blur-[100px] mix-blend-overlay dark:mix-blend-screen" />
-      </div>
-
-      {/* Fixed controls stay above the scrollable area */}
-      <div className="fixed top-8 right-6 z-50">
+      {/* Fixed controls */}
+      <div className="fixed top-6 right-6 z-50">
         <ThemeToggle />
       </div>
 
-      <div className="fixed top-8 left-6 z-50">
+      <div className="fixed top-6 left-6 z-50">
         <Popover>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               size="icon"
-              className="rounded-full bg-background/20 backdrop-blur-md border-white/10 hover:bg-background/40 shadow-sm"
+              className="rounded-full bg-background/20 backdrop-blur-md border-white/10 hover:bg-background/40 shadow-sm transition-all duration-300 hover:scale-105"
             >
               <ApinsityLogo withText={false} className="h-5 w-5" />
             </Button>
@@ -218,31 +233,58 @@ export default function HomePage() {
         </Popover>
       </div>
 
-      {/* FIX: SCROLLABLE WRAPPER 
-        - absolute inset-0: Fills the screen
-        - overflow-y-auto: Allows scrolling if content is too tall
-        - [&::-webkit-scrollbar]:hidden: Hides scrollbar (Chrome/Safari/Edge)
-        - [scrollbar-width:none]: Hides scrollbar (Firefox)
-      */}
+      {/* Scrollable wrapper */}
       <div className="absolute inset-0 w-full h-full overflow-y-auto overflow-x-hidden flex flex-col items-center p-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        <main className="relative z-10 flex flex-1 w-full max-w-md flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-1000 pt-20 pb-10 sm:pt-6 sm:pb-2 min-h-[min-content]">
-          <h1 className="font-lavish text-[clamp(3rem,15vw,9rem)] leading-[0.9] tracking-wide text-transparent bg-clip-text bg-gradient-to-br from-foreground to-foreground/50 dark:from-white dark:to-white/50 drop-shadow-lg select-none pb-1">
+        <motion.main
+          className="relative z-10 flex flex-1 w-full max-w-md flex-col items-center justify-center text-center pt-20 pb-10 sm:pt-6 sm:pb-2 min-h-[min-content]"
+          variants={containerVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {/* ── Hero Title ─────────────────────────────────────────── */}
+          <motion.h1
+            variants={itemVariants}
+            className="font-lavish text-[clamp(3.5rem,15vw,9rem)] leading-[0.9] tracking-wide gradient-text drop-shadow-lg pb-1"
+          >
             QuickSync
-          </h1>
+          </motion.h1>
 
-          <p className="mt-1 font-lavish text-xl sm:text-3xl text-muted-foreground/80 select-none flex items-center gap-2">
+          <motion.p
+            variants={itemVariants}
+            className="mt-2 font-medium text-base sm:text-lg text-muted-foreground/70 tracking-wide"
+          >
             Real-Time Shared Clipboard
-          </p>
+          </motion.p>
 
-          <div className="mt-4 sm:mt-8 w-full glass-panel rounded-3xl p-5 sm:p-8 transition-all duration-500 hover:shadow-2xl hover:border-white/30 group">
-            <button
+          {/* ── Animated tagline chips ─────────────────────────────── */}
+          <motion.div variants={itemVariants} className="flex flex-wrap justify-center gap-2 mt-4">
+            {['Instant', 'Encrypted', 'Ephemeral'].map((tag) => (
+              <span
+                key={tag}
+                className="px-3 py-1 text-[11px] font-semibold uppercase tracking-widest rounded-full border border-white/10 dark:border-white/5 bg-white/30 dark:bg-white/[0.03] text-muted-foreground/70 backdrop-blur-sm"
+              >
+                {tag}
+              </span>
+            ))}
+          </motion.div>
+
+          {/* ── Main Card ──────────────────────────────────────────── */}
+          <motion.div
+            variants={cardVariants}
+            className="mt-6 sm:mt-10 w-full glow-card rounded-2xl p-5 sm:p-8 transition-all duration-500"
+          >
+            {/* Create Room Button */}
+            <motion.button
+              variants={buttonItemVariants}
               onClick={handleCreateRoom}
               disabled={isLoading}
-              className={`w-full font-semibold py-4 px-4 rounded-2xl transition-all duration-300 mb-4 sm:mb-5 flex items-center justify-center shadow-lg transform hover:-translate-y-1 active:translate-y-0 active:scale-[0.98]
+              whileHover={{ scale: 1.02, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full btn-shine glow-pulse font-semibold py-4 px-4 rounded-xl transition-all duration-300 mb-4 sm:mb-5 flex items-center justify-center shadow-lg
                 ${
                   isSecureMode
-                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 shadow-green-500/30 text-white ring-2 ring-green-500/20'
-                    : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-blue-500/30 text-white ring-2 ring-blue-500/20'
+                    ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white'
+                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white'
                 }
               `}
             >
@@ -257,43 +299,53 @@ export default function HomePage() {
                   <Globe className="mr-2 h-5 w-5" /> Create Public Room
                 </>
               )}
-            </button>
+            </motion.button>
 
-            <div className="flex items-center justify-center gap-3 mb-5 sm:mb-6 bg-black/5 dark:bg-white/5 p-2 rounded-full w-fit mx-auto border border-white/10 backdrop-blur-sm">
+            {/* Security Toggle */}
+            <motion.div
+              variants={buttonItemVariants}
+              className="flex items-center justify-center gap-3 mb-5 sm:mb-6 bg-black/[0.03] dark:bg-white/[0.03] p-2.5 rounded-full w-fit mx-auto border border-black/5 dark:border-white/5 backdrop-blur-sm"
+            >
               <Switch
                 id="secure-mode"
                 checked={isSecureMode}
                 onCheckedChange={toggleSecureMode}
-                className="data-[state=checked]:bg-green-500"
+                className="data-[state=checked]:bg-emerald-500"
               />
               <Label
                 htmlFor="secure-mode"
                 className="text-sm font-medium cursor-pointer flex items-center gap-2 pr-2 select-none"
               >
                 {isSecureMode ? (
-                  <span className="text-green-600 dark:text-green-400 flex items-center gap-1.5 animate-in fade-in duration-300">
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5" /> E2E Encrypted
                   </span>
                 ) : (
-                  <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1.5 animate-in fade-in duration-300">
+                  <span className="text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5" /> Public Mode
                   </span>
                 )}
               </Label>
-            </div>
+            </motion.div>
 
-            <div className="relative mb-5 sm:mb-6">
+            {/* Divider */}
+            <motion.div variants={buttonItemVariants} className="relative mb-5 sm:mb-6">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-foreground/10 dark:border-white/10"></div>
+                <div className="w-full border-t border-black/5 dark:border-white/5" />
               </div>
               <div className="relative flex justify-center text-xs uppercase tracking-widest font-bold">
-                <span className="px-4 bg-white/50 dark:bg-black/50 backdrop-blur-md text-muted-foreground/80 rounded-full py-1 border border-white/10">
+                <span className="px-4 bg-white/60 dark:bg-white/[0.03] backdrop-blur-md text-muted-foreground/60 rounded-full py-1 border border-black/5 dark:border-white/5">
                   or join existing
                 </span>
               </div>
-            </div>
+            </motion.div>
 
-            <form onSubmit={(e) => handleJoinRoom(e)} className="space-y-4">
+            {/* Join Form */}
+            <motion.form
+              variants={buttonItemVariants}
+              onSubmit={(e) => handleJoinRoom(e)}
+              className="space-y-4"
+            >
               <div className="relative group/input">
                 <input
                   type="text"
@@ -304,24 +356,29 @@ export default function HomePage() {
                   }}
                   placeholder="ENTER 6-CHAR CODE"
                   maxLength={6}
-                  className="w-full bg-white/5 dark:bg-black/20 border-2 border-white/10 focus:border-primary/50 rounded-2xl px-4 py-4 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 text-center font-mono text-lg font-bold tracking-[0.3em] transition-all shadow-inner hover:bg-white/10 dark:hover:bg-black/30"
+                  className="w-full bg-black/[0.02] dark:bg-white/[0.03] border-2 border-black/5 dark:border-white/5 focus:border-violet-500/50 dark:focus:border-violet-400/50 rounded-xl px-4 py-4 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:ring-0 text-center font-mono text-lg font-bold tracking-[0.3em] transition-all duration-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]"
                 />
-                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-foreground/5 rounded-tl-lg group-hover/input:border-primary/40 transition-colors duration-500" />
-                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-foreground/5 rounded-tr-lg group-hover/input:border-primary/40 transition-colors duration-500" />
-                <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-foreground/5 rounded-bl-lg group-hover/input:border-primary/40 transition-colors duration-500" />
-                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-foreground/5 rounded-br-lg group-hover/input:border-primary/40 transition-colors duration-500" />
+                {/* Corner accents */}
+                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-transparent rounded-tl-lg group-hover/input:border-violet-500/30 transition-colors duration-500" />
+                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-transparent rounded-tr-lg group-hover/input:border-violet-500/30 transition-colors duration-500" />
+                <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-transparent rounded-bl-lg group-hover/input:border-violet-500/30 transition-colors duration-500" />
+                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-transparent rounded-br-lg group-hover/input:border-violet-500/30 transition-colors duration-500" />
               </div>
 
               {joinError && (
-                <div className="flex items-center justify-center gap-2 text-red-500 dark:text-red-400 text-sm font-bold animate-in slide-in-from-top-2 duration-300">
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center justify-center gap-2 text-red-500 dark:text-red-400 text-sm font-bold"
+                >
                   <ShieldAlert className="w-4 h-4" /> {joinError}
-                </div>
+                </motion.div>
               )}
 
               <button
                 type="submit"
                 disabled={isLoading || !joinCode.trim()}
-                className="w-full bg-secondary/80 hover:bg-secondary text-secondary-foreground font-semibold py-3 px-4 rounded-xl transition-all border border-white/10 hover:border-white/20 flex items-center justify-center gap-2 group/btn shadow-sm hover:shadow-md"
+                className="w-full bg-black/[0.03] dark:bg-white/[0.06] hover:bg-black/[0.06] dark:hover:bg-white/[0.1] text-foreground font-semibold py-3 px-4 rounded-xl transition-all duration-300 border border-black/5 dark:border-white/5 hover:border-black/10 dark:hover:border-white/10 flex items-center justify-center gap-2 group/btn"
               >
                 {isJoining ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -332,46 +389,62 @@ export default function HomePage() {
                   </>
                 )}
               </button>
-            </form>
+            </motion.form>
 
+            {/* Recent Rooms */}
             {recentRooms.length > 0 && (
-              <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-foreground/5 dark:border-white/5">
-                <div className="flex items-center justify-center gap-2 mb-3 sm:mb-4 text-muted-foreground/60 text-[10px] font-bold uppercase tracking-[0.2em]">
+              <motion.div
+                variants={buttonItemVariants}
+                className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-black/5 dark:border-white/5"
+              >
+                <div className="flex items-center justify-center gap-2 mb-3 sm:mb-4 text-muted-foreground/50 text-[10px] font-bold uppercase tracking-[0.2em]">
                   <Clock className="w-3 h-3" />
                   <span>Recent Portals</span>
                 </div>
                 <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
-                  {recentRooms.map((item) => (
-                    <Badge
+                  {recentRooms.map((item, i) => (
+                    <motion.div
                       key={item.code}
-                      variant="outline"
-                      className={`cursor-pointer px-3 py-1.5 transition-all duration-300 border font-mono text-xs sm:text-sm flex items-center gap-1.5 group/badge
-                        ${
-                          item.key
-                            ? 'text-green-600 dark:text-green-400 border-green-500/30 hover:bg-green-500/10 hover:shadow-[0_0_15px_rgba(34,197,94,0.2)]'
-                            : 'text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/10 hover:shadow-[0_0_15px_rgba(59,130,246,0.2)]'
-                        }
-                      `}
-                      onClick={() => handleJoinRoom(undefined, item.code, item.key)}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.1, duration: 0.4 }}
                     >
-                      {item.key ? (
-                        <ShieldCheck className="w-3 h-3 group-hover/badge:scale-110 transition-transform" />
-                      ) : (
-                        <Globe className="w-3 h-3 group-hover/badge:scale-110 transition-transform" />
-                      )}
-                      {item.code}
-                      <ArrowRight className="w-3 h-3 opacity-30 group-hover/badge:opacity-100 group-hover/badge:translate-x-0.5 transition-all" />
-                    </Badge>
+                      <Badge
+                        variant="outline"
+                        className={`cursor-pointer px-3 py-1.5 transition-all duration-300 border font-mono text-xs sm:text-sm flex items-center gap-1.5 group/badge hover:scale-105
+                          ${
+                            item.key
+                              ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                              : 'text-violet-600 dark:text-violet-400 border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 hover:shadow-[0_0_20px_rgba(139,92,246,0.15)]'
+                          }
+                        `}
+                        onClick={() => handleJoinRoom(undefined, item.code, item.key)}
+                      >
+                        {item.key ? (
+                          <ShieldCheck className="w-3 h-3 group-hover/badge:scale-110 transition-transform" />
+                        ) : (
+                          <Globe className="w-3 h-3 group-hover/badge:scale-110 transition-transform" />
+                        )}
+                        {item.code}
+                        <ArrowRight className="w-3 h-3 opacity-30 group-hover/badge:opacity-100 group-hover/badge:translate-x-0.5 transition-all" />
+                      </Badge>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
+              </motion.div>
             )}
-          </div>
-        </main>
+          </motion.div>
+        </motion.main>
 
-        <footer className="w-full max-w-6xl mx-auto flex shrink-0 items-center justify-between text-xs text-muted-foreground/60 pb-4 sm:pb-10 z-20 pointer-events-none">
-          <div className="flex items-center gap-2 pointer-events-auto hover:text-foreground transition-colors">
-            <Sparkles className="w-3 h-3 text-yellow-500/70" />
+        {/* Footer */}
+        <motion.footer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2, duration: 0.8 }}
+          className="w-full max-w-6xl mx-auto flex shrink-0 items-center justify-between text-xs text-muted-foreground/40 pb-4 sm:pb-10 z-20 pointer-events-none"
+        >
+          <div className="flex items-center gap-2 pointer-events-auto hover:text-foreground/60 transition-colors">
+            <Sparkles className="w-3 h-3 text-violet-500/50" />
             <span>Developed by Asura</span>
           </div>
           <Popover>
@@ -405,13 +478,13 @@ export default function HomePage() {
                     Security Models
                   </h4>
                   <div className="flex flex-col gap-3 text-sm">
-                    <div className="flex items-start gap-2 text-green-600 dark:text-green-400">
+                    <div className="flex items-start gap-2 text-emerald-600 dark:text-emerald-400">
                       <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
                       <p>
                         <strong>E2E Encrypted:</strong> AES-256. Requires Hash Key.
                       </p>
                     </div>
-                    <div className="flex items-start gap-2 text-blue-500 dark:text-blue-400">
+                    <div className="flex items-start gap-2 text-violet-500 dark:text-violet-400">
                       <Globe className="h-4 w-4 flex-shrink-0 mt-0.5" />
                       <p>
                         <strong>Public:</strong> Obfuscated. Open access.
@@ -422,7 +495,7 @@ export default function HomePage() {
               </div>
             </PopoverContent>
           </Popover>
-        </footer>
+        </motion.footer>
       </div>
     </div>
   );
