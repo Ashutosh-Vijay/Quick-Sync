@@ -28,4 +28,3 @@ export const supabase = createClient<Database>(
 
 // Helper types derived from the Database definition
 export type Room = Database['public']['Tables']['rooms']['Row'];
-export type Presence = Database['public']['Tables']['room_presence']['Row'];

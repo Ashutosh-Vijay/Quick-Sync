@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -6,34 +7,63 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-import { ArrowLeft, Trash2, Loader2, RefreshCw, Skull, FileX, FolderX, Ghost } from 'lucide-react';
+import {
+  ArrowLeft,
+  Trash2,
+  Loader2,
+  RefreshCw,
+  Skull,
+  FileX,
+  FolderX,
+  Ghost,
+  Globe,
+  Lock,
+} from 'lucide-react';
 
 interface RoomSummary {
   room_code: string;
   updated_at: string;
   content_length: number;
   file_count: number;
+  mode: 'public' | 'private' | 'empty';
+}
+
+function detectMode(content: string | null): 'public' | 'private' | 'empty' {
+  if (!content || content.length < 5) return 'empty';
+  try {
+    decodeURIComponent(atob(content));
+    return 'public';
+  } catch {
+    return 'private';
+  }
 }
 
 async function deleteRoomStorage(roomCode: string) {
-  const { data: folders } = await supabase.storage.from('quick-share').list(roomCode);
+  const { data: folders, error: listErr } = await supabase.storage
+    .from('quick-share')
+    .list(roomCode);
+  if (listErr) throw new Error(`Storage list failed for ${roomCode}: ${listErr.message}`);
   if (!folders || folders.length === 0) return;
   const paths: string[] = [];
   for (const folder of folders) {
-    const { data: files } = await supabase.storage
+    const { data: files, error: fileErr } = await supabase.storage
       .from('quick-share')
       .list(`${roomCode}/${folder.name}`);
+    if (fileErr)
+      throw new Error(`Storage list failed for ${roomCode}/${folder.name}: ${fileErr.message}`);
     (files ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
   }
   if (paths.length > 0) {
-    await supabase.storage.from('quick-share').remove(paths);
+    const { error: removeErr } = await supabase.storage.from('quick-share').remove(paths);
+    if (removeErr) throw new Error(`Storage remove failed: ${removeErr.message}`);
   }
 }
 
 async function deleteRoomFull(roomCode: string) {
   await deleteRoomStorage(roomCode);
   await supabase.from('room_files').delete().eq('room_code', roomCode);
-  await supabase.from('room_presence').delete().eq('room_code', roomCode);
+  // room_presence logic removed by user request
+  // await supabase.from('room_presence').delete().eq('room_code', roomCode);
   await supabase.from('rooms').delete().eq('room_code', roomCode);
 }
 
@@ -89,6 +119,7 @@ export default function AdminPage() {
           updated_at: r.updated_at,
           content_length: r.content ? Math.round(r.content.length * 0.75) : 0,
           file_count: countMap[r.room_code] ?? 0,
+          mode: detectMode(r.content),
         }))
       );
     } finally {
@@ -108,7 +139,8 @@ export default function AdminPage() {
       toast({ description: `Room ${code} destroyed.` });
     } catch (e) {
       console.error(e);
-      toast({ variant: 'destructive', description: 'Delete failed.' });
+      const msg = e instanceof Error ? e.message : 'Delete failed.';
+      toast({ variant: 'destructive', description: msg });
     } finally {
       setDeletingCode(null);
     }
@@ -122,7 +154,8 @@ export default function AdminPage() {
       toast({ description: `Files cleared from ${code}.` });
     } catch (e) {
       console.error(e);
-      toast({ variant: 'destructive', description: 'Clear files failed.' });
+      const msg = e instanceof Error ? e.message : 'Clear files failed.';
+      toast({ variant: 'destructive', description: msg });
     } finally {
       setClearingFilesCode(null);
     }
@@ -139,7 +172,8 @@ export default function AdminPage() {
       toast({ description: 'All rooms purged.' });
     } catch (e) {
       console.error(e);
-      toast({ variant: 'destructive', description: 'Purge failed.' });
+      const msg = e instanceof Error ? e.message : 'Purge failed.';
+      toast({ variant: 'destructive', description: msg });
     } finally {
       setIsPurgingAll(false);
     }
@@ -181,7 +215,8 @@ export default function AdminPage() {
       toast({ description: 'Orphaned files purged.' });
     } catch (e) {
       console.error(e);
-      toast({ variant: 'destructive', description: 'Purge failed.' });
+      const msg = e instanceof Error ? e.message : 'Purge failed.';
+      toast({ variant: 'destructive', description: msg });
     } finally {
       setIsPurgingOrphaned(false);
     }
@@ -299,83 +334,110 @@ export default function AdminPage() {
         ) : (
           <ScrollArea className="h-[calc(100vh-16rem)]">
             <div className="flex flex-col gap-2">
-              {rooms.map((room) => {
-                const isDeleting = deletingCode === room.room_code;
-                const isClearingFiles = clearingFilesCode === room.room_code;
-                return (
-                  <div
-                    key={room.room_code}
-                    className="flex items-center justify-between gap-4 p-3 bg-card border rounded-lg hover:border-primary/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        className="font-mono font-bold text-primary tracking-widest text-sm cursor-pointer hover:underline shrink-0"
-                        onClick={() => navigate(`/room/${room.room_code}`)}
-                        title="Open room"
-                      >
-                        {room.room_code}
-                      </span>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {room.content_length > 0 && (
-                          <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
-                            ~
-                            {room.content_length >= 1000
-                              ? `${(room.content_length / 1000).toFixed(1)}k`
-                              : room.content_length}
-                            c
-                          </Badge>
-                        )}
-                        {room.file_count > 0 && (
-                          <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
-                            {room.file_count} FILE{room.file_count !== 1 ? 'S' : ''}
-                          </Badge>
-                        )}
+              <AnimatePresence mode="popLayout">
+                {rooms.map((room, i) => {
+                  const isDeleting = deletingCode === room.room_code;
+                  const isClearingFiles = clearingFilesCode === room.room_code;
+                  return (
+                    <motion.div
+                      key={room.room_code}
+                      layout
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -20, transition: { duration: 0.15 } }}
+                      transition={{ delay: Math.min(i * 0.035, 0.25), duration: 0.2 }}
+                      className="flex items-center justify-between gap-4 p-3 bg-card border rounded-lg hover:border-primary/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span
+                          className="font-mono font-bold text-primary tracking-widest text-sm cursor-pointer hover:underline shrink-0"
+                          onClick={() => navigate(`/room/${room.room_code}`)}
+                          title="Open room"
+                        >
+                          {room.room_code}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {room.content_length > 0 && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
+                              ~
+                              {room.content_length >= 1000
+                                ? `${(room.content_length / 1000).toFixed(1)}k`
+                                : room.content_length}
+                              c
+                            </Badge>
+                          )}
+                          {room.file_count > 0 && (
+                            <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">
+                              {room.file_count} FILE{room.file_count !== 1 ? 'S' : ''}
+                            </Badge>
+                          )}
+                          {room.mode === 'public' && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-4 px-1.5 gap-1 text-sky-500 border-sky-500/30"
+                            >
+                              <Globe className="w-2.5 h-2.5" />
+                              PUB
+                            </Badge>
+                          )}
+                          {room.mode === 'private' && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] h-4 px-1.5 gap-1 text-violet-500 border-violet-500/30"
+                            >
+                              <Lock className="w-2.5 h-2.5" />
+                              E2E
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span
-                        className="text-xs text-muted-foreground font-mono hidden sm:block"
-                        title="Last modified"
-                      >
-                        ✎ {new Date(room.updated_at).toLocaleDateString()}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className="text-xs text-muted-foreground font-mono hidden sm:block"
+                          title="Last modified"
+                        >
+                          ✎ {new Date(room.updated_at).toLocaleDateString()}
+                        </span>
 
-                      {/* Clear files only */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0 text-orange-500 hover:text-orange-500 hover:bg-orange-500/10"
-                        disabled={isClearingFiles || isDeleting || isBusy || room.file_count === 0}
-                        onClick={() => handleClearFilesOnly(room.room_code)}
-                        title="Clear files only (keep room)"
-                      >
-                        {isClearingFiles ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <FolderX className="w-4 h-4" />
-                        )}
-                      </Button>
+                        {/* Clear files only */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-orange-500 hover:text-orange-500 hover:bg-orange-500/10"
+                          disabled={
+                            isClearingFiles || isDeleting || isBusy || room.file_count === 0
+                          }
+                          onClick={() => handleClearFilesOnly(room.room_code)}
+                          title="Clear files only (keep room)"
+                        >
+                          {isClearingFiles ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <FolderX className="w-4 h-4" />
+                          )}
+                        </Button>
 
-                      {/* Delete room fully */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        disabled={isDeleting || isClearingFiles || isBusy}
-                        onClick={() => handleDelete(room.room_code)}
-                        title="Delete room + all files"
-                      >
-                        {isDeleting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+                        {/* Delete room fully */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          disabled={isDeleting || isClearingFiles || isBusy}
+                          onClick={() => handleDelete(room.room_code)}
+                          title="Delete room + all files"
+                        >
+                          {isDeleting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           </ScrollArea>
         )}

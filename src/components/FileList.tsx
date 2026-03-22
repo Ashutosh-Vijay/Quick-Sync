@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
-import { decryptData } from '@/lib/crypto';
+import { decryptData, decryptFile } from '@/lib/crypto';
 import { unwrapPayload } from '@/lib/payloadHelper';
 import {
   Download,
@@ -28,7 +29,6 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { Progress } from '@/components/ui/progress';
-import * as CryptoJS from 'crypto-js';
 
 type FileRow = Database['public']['Tables']['room_files']['Row'];
 
@@ -74,7 +74,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const [isClearingAll, setIsClearingAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { isUploading, progress, uploadFile } = useFileUpload({
+  const { isUploading, progress, uploadFiles } = useFileUpload({
     roomCode,
     secretKey,
     onUploadComplete: () => {
@@ -84,12 +84,12 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    const newFile = await uploadFile(file);
-    if (newFile) {
+    const files = Array.from(e.target.files);
+    const newFiles = await uploadFiles(files);
+    if (newFiles && newFiles.length > 0) {
       setFiles((prev) => {
-        if (prev.some((f) => f.id === newFile.id)) return prev;
-        return [newFile, ...prev];
+        const toAdd = newFiles.filter((nf) => !prev.some((f) => f.id === nf.id));
+        return [...toAdd, ...prev];
       });
     }
   };
@@ -97,10 +97,10 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   useEffect(() => {
     if (!roomCode) return;
 
-    const parseFileRecord = (row: FileRow): FileRecord | null => {
+    const parseFileRecord = async (row: FileRow): Promise<FileRecord | null> => {
       try {
         const encryptedMeta = unwrapPayload(row.file_data);
-        const metaString = decryptData(encryptedMeta, secretKey);
+        const metaString = await decryptData(encryptedMeta, secretKey);
         const meta = JSON.parse(metaString);
         return {
           id: row.id,
@@ -124,7 +124,9 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
         .order('uploaded_at', { ascending: false });
 
       if (data) {
-        const parsed = data.map(parseFileRecord).filter((f): f is FileRecord => f !== null);
+        const parsed = (await Promise.all(data.map(parseFileRecord))).filter(
+          (f): f is FileRecord => f !== null
+        );
         setFiles(parsed);
       }
     };
@@ -140,8 +142,8 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
           table: 'room_files',
           filter: `room_code=eq.${roomCode}`,
         },
-        (payload) => {
-          const newFile = parseFileRecord(payload.new as FileRow);
+        async (payload) => {
+          const newFile = await parseFileRecord(payload.new as FileRow);
           if (newFile) {
             setFiles((prev) => {
               if (prev.some((f) => f.id === newFile.id)) return prev;
@@ -219,28 +221,21 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
     setDownloadingId(file.id);
     try {
       const response = await fetch(file.url);
-      const content = await response.text();
-
       let byteArray: Uint8Array;
 
       if (secretKey) {
-        const decryptedBytes = CryptoJS.AES.decrypt(content, secretKey);
-        const len = decryptedBytes.sigBytes;
-        const words = decryptedBytes.words;
-        byteArray = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          byteArray[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
-        }
+        const buffer = await response.arrayBuffer();
+        byteArray = await decryptFile(buffer, secretKey);
       } else {
+        const content = await response.text();
         const binaryString = window.atob(content);
-        const len = binaryString.length;
-        byteArray = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
+        byteArray = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
           byteArray[i] = binaryString.charCodeAt(i);
         }
       }
 
-      const blob = new Blob([byteArray as unknown as BlobPart], { type: file.type });
+      const blob = new Blob([new Uint8Array(byteArray)], { type: file.type });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -303,7 +298,13 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
+        <input
+          type="file"
+          multiple
+          ref={fileInputRef}
+          className="hidden"
+          onChange={handleFileSelect}
+        />
 
         <ScrollArea className="h-[calc(100vh-8rem)] mt-4 pr-4 overflow-x-hidden">
           {files.length === 0 ? (
@@ -333,90 +334,119 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {isUploading && (
-                <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
-                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <div className="flex-1">
-                    <p className="text-xs font-medium text-primary mb-1">Uploading file...</p>
-                    <Progress value={progress} className="h-1" />
-                  </div>
-                </div>
-              )}
-
-              {files.map((file) => {
-                const isExpanded = expandedId === file.id;
-                return (
-                  <div
-                    key={file.id}
-                    className="flex flex-col bg-card border rounded-lg overflow-hidden hover:border-primary/50 transition-colors w-full"
+              <AnimatePresence>
+                {isUploading && (
+                  <motion.div
+                    key="uploading"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
                   >
-                    {/* Clickable info row — toggles expand */}
-                    <div
-                      className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
-                      onClick={() => setExpandedId(isExpanded ? null : file.id)}
-                    >
-                      <div
-                        className={`p-2 rounded-md shrink-0 ${
-                          secretKey ? 'bg-green-500/10' : 'bg-blue-500/10'
-                        }`}
-                      >
-                        {secretKey ? (
-                          <ShieldCheck className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <Globe className="w-4 h-4 text-blue-500" />
-                        )}
+                    <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-primary mb-1">Uploading file...</p>
+                        <Progress value={progress} className="h-1" />
                       </div>
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <span className="font-medium text-sm truncate" title={file.name}>
-                          {file.name}
-                        </span>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{file.size}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> {timeAgo(file.uploaded_at)}
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      />
                     </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                    {/* Action buttons */}
-                    <div className="flex gap-2 px-3 pb-3">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="flex-1 h-9 gap-2"
-                        onClick={() => handleDownload(file)}
-                        disabled={downloadingId === file.id}
+              <AnimatePresence mode="popLayout">
+                {files.map((file, i) => {
+                  const isExpanded = expandedId === file.id;
+                  return (
+                    <motion.div
+                      key={file.id}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -16, transition: { duration: 0.15 } }}
+                      transition={{ delay: Math.min(i * 0.04, 0.25), duration: 0.22 }}
+                      className="flex flex-col bg-card border rounded-lg overflow-hidden hover:border-primary/50 transition-colors w-full"
+                    >
+                      {/* Clickable info row — toggles expand */}
+                      <div
+                        className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                        onClick={() => setExpandedId(isExpanded ? null : file.id)}
                       >
-                        {downloadingId === file.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Download className="w-4 h-4" />
-                        )}
-                        {downloadingId === file.id ? 'Decrypting...' : 'Download'}
-                      </Button>
+                        <div
+                          className={`p-2 rounded-md shrink-0 ${
+                            secretKey ? 'bg-green-500/10' : 'bg-blue-500/10'
+                          }`}
+                        >
+                          {secretKey ? (
+                            <ShieldCheck className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <Globe className="w-4 h-4 text-blue-500" />
+                          )}
+                        </div>
+                        <div className="flex flex-col min-w-0 flex-1">
+                          <span className="font-medium text-sm truncate" title={file.name}>
+                            {file.name}
+                          </span>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{file.size}</span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {timeAgo(file.uploaded_at)}
+                            </span>
+                          </div>
+                        </div>
+                        <motion.div
+                          animate={{ rotate: isExpanded ? 180 : 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </motion.div>
+                      </div>
 
-                      {isExpanded && (
+                      {/* Action buttons */}
+                      <div className="flex gap-2 px-3 pb-3">
                         <Button
                           size="sm"
-                          variant="destructive"
-                          className="h-9 gap-2 animate-in fade-in duration-150"
-                          onClick={() => handleDelete(file.id)}
+                          variant="secondary"
+                          className="flex-1 h-9 gap-2 active:scale-95 transition-transform"
+                          onClick={() => handleDownload(file)}
+                          disabled={downloadingId === file.id}
                         >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
+                          {downloadingId === file.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                          {downloadingId === file.id ? 'Decrypting...' : 'Download'}
                         </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              initial={{ opacity: 0, width: 0 }}
+                              animate={{ opacity: 1, width: 'auto' }}
+                              exit={{ opacity: 0, width: 0 }}
+                              transition={{ duration: 0.18 }}
+                              className="overflow-hidden shrink-0"
+                            >
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-9 gap-2 active:scale-95 transition-transform"
+                                onClick={() => handleDelete(file.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </Button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           )}
         </ScrollArea>

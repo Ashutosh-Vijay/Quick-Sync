@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
 import { getKeyFromHash } from '@/lib/crypto';
 import { supabase } from '@/lib/supabase';
 import { useRoomConnection } from '@/hooks/useRoomConnection';
+import { useFileUpload } from '@/hooks/useFileUpload';
 import { useRoomStore } from '@/store/roomStore';
 import { FileShare } from '@/components/FileShare';
 import { FileList } from '@/components/FileList';
@@ -37,9 +39,7 @@ import {
   QrCode,
   Skull,
   RotateCcw,
-  RotateCw, // New Icon for Redo
-  Lock,
-  Unlock,
+  RotateCw,
   Globe,
   Menu,
   CloudOff,
@@ -47,6 +47,7 @@ import {
   Key,
   Share2,
   Flame,
+  UploadCloud,
 } from 'lucide-react';
 
 const HISTORY_LIMIT = 10;
@@ -62,8 +63,13 @@ export default function RoomPage() {
   const navigate = useNavigate();
   const location = useLocation(); // Hook to listen to URL changes
   const { toast } = useToast();
-  const { isNuked, setNuked, isLocked, setLocked } = useRoomStore();
+  const { isNuked, setNuked } = useRoomStore();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Bug 8: Reset isNuked immediately on mount/room change to prevent flash
+  useEffect(() => {
+    setNuked(false);
+  }, [roomCode, setNuked]);
 
   // FIX: Make secretKey reactive to location changes
   const [secretKey, setSecretKey] = useState<string | null>(getKeyFromHash());
@@ -78,7 +84,31 @@ export default function RoomPage() {
   const [future, setFuture] = useState<string[]>([]); // Redo Stack
   const [destructOpen, setDestructOpen] = useState(false);
   const [isDestructing, setIsDestructing] = useState(false);
-  const isUndoingRedoing = useRef(false); // Flag to prevent history loops
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+  const isUndoingRedoing = useRef(false);
+
+  const { uploadFiles, isUploading } = useFileUpload({ roomCode: roomCode!, secretKey });
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes('Files')) {
+      dragCounterRef.current++;
+      setIsDragging(true);
+    }
+  };
+  const handleDragLeave = () => {
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) await uploadFiles(files);
+  }; // Flag to prevent history loops
 
   // History management
   useEffect(() => {
@@ -100,22 +130,8 @@ export default function RoomPage() {
     secretKey
   );
 
-  useEffect(() => {
-    if (content) {
-      // If we are currently undoing/redoing, skip the automatic history logging
-      if (isUndoingRedoing.current) {
-        isUndoingRedoing.current = false;
-        return;
-      }
-
-      setHistory((prev) => {
-        if (prev.length > 0 && prev[0] === content) return prev;
-        return [content, ...prev].slice(0, HISTORY_LIMIT);
-      });
-      // Clear future on new manual typing
-      setFuture([]);
-    }
-  }, [content]);
+  // Simple history management for undo/redo
+  // Removed automatic effect-based tracking to avoid conflicts with remote changes.
 
   const handleUndo = () => {
     if (history.length < 2) return;
@@ -152,20 +168,10 @@ export default function RoomPage() {
     if (!content) return;
 
     try {
-      // Try modern API first (requires HTTPS)
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(content);
-      } else {
-        throw new Error('Clipboard API unavailable');
-      }
+      await navigator.clipboard.writeText(content);
     } catch (_err) {
-      // FIX: Renamed unused var to _err
-      // Fallback for HTTP/LAN debugging using execCommand
-      if (textareaRef.current) {
-        textareaRef.current.select();
-        document.execCommand('copy');
-        textareaRef.current.setSelectionRange(0, 0); // Deselect
-      }
+      toast({ variant: 'destructive', description: 'Failed to copy to clipboard' });
+      return;
     }
 
     setCopied(true);
@@ -196,7 +202,6 @@ export default function RoomPage() {
         }
       }
       await supabase.from('room_files').delete().eq('room_code', roomCode);
-      await supabase.from('room_presence').delete().eq('room_code', roomCode);
       await supabase.from('rooms').delete().eq('room_code', roomCode);
       setDestructOpen(false);
       setNuked(true);
@@ -307,7 +312,7 @@ export default function RoomPage() {
       <Button
         variant="ghost"
         size="sm"
-        className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+        className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-transform"
         onClick={() => setDestructOpen(true)}
       >
         <Flame className="w-4 h-4" />
@@ -391,7 +396,7 @@ export default function RoomPage() {
               variant="ghost"
               size="icon"
               onClick={() => navigate('/')}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground active:scale-95 transition-transform"
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
@@ -413,27 +418,57 @@ export default function RoomPage() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-3 py-4 sm:px-6 sm:py-6 z-10 pb-24">
-        <div className="bg-background/80 backdrop-blur-md rounded-xl shadow-sm sm:shadow-2xl border border-border min-h-[calc(100dvh-10rem)] sm:min-h-[70vh] flex flex-col overflow-hidden relative">
-          {isLocked && (
-            <div className="absolute inset-0 bg-background/10 z-10 flex justify-center pt-24 pointer-events-none">
-              <div className="bg-background/80 backdrop-blur-sm border border-border px-4 py-2 rounded-full flex items-center gap-2 text-muted-foreground shadow-lg">
-                <Lock className="w-4 h-4" />{' '}
-                <span className="text-xs font-medium uppercase tracking-wider">Read Only</span>
-              </div>
+      <main
+        className="flex-1 max-w-6xl w-full mx-auto px-3 py-4 sm:px-6 sm:py-6 z-10 pb-24"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="bg-background/80 backdrop-blur-md rounded-xl shadow-sm sm:shadow-2xl border border-border min-h-[calc(100dvh-10rem)] sm:min-h-[70vh] flex flex-col overflow-hidden relative"
+        >
+          <AnimatePresence>
+            {isDragging && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-xl pointer-events-none"
+              >
+                <motion.div
+                  initial={{ scale: 0.7 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                >
+                  <UploadCloud className="w-12 h-12 text-primary" />
+                </motion.div>
+                <p className="font-mono font-bold text-primary tracking-wide">Drop to upload</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {isUploading && !isDragging && (
+            <div className="absolute top-3 right-3 z-30 flex items-center gap-2 bg-background/90 border border-border rounded-full px-3 py-1.5 text-xs text-primary font-mono shadow-lg">
+              <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
             </div>
           )}
-
           <textarea
             ref={textareaRef}
             value={content}
-            onChange={(e) => updateContent(e.target.value)}
-            readOnly={isLocked}
-            placeholder={
-              isLocked
-                ? 'Room is locked.'
-                : `Paste logs/code here. Traffic is ${secretKey ? 'encrypted' : 'obfuscated'}.`
-            }
+            onChange={(e) => {
+              const val = e.target.value;
+              setHistory((prev) => {
+                if (prev.length > 0 && prev[0] === val) return prev;
+                return [val, ...prev].slice(0, HISTORY_LIMIT);
+              });
+              setFuture([]);
+              updateContent(val);
+            }}
+            placeholder={`Paste logs/code here. Traffic is ${secretKey ? 'encrypted' : 'obfuscated'}.`}
             className="w-full flex-1 bg-transparent text-foreground placeholder-muted-foreground/50 focus:outline-none border-none resize-none font-mono text-sm sm:text-base leading-relaxed p-4 sm:p-6 select-text"
             autoFocus
             spellCheck={false}
@@ -457,18 +492,12 @@ export default function RoomPage() {
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              <Button variant="ghost" size="icon" onClick={() => setLocked(!isLocked)}>
-                {isLocked ? (
-                  <Lock className="w-4 h-4 text-orange-500" />
-                ) : (
-                  <Unlock className="w-4 h-4 text-muted-foreground" />
-                )}
-              </Button>
               <Button
                 variant="ghost"
                 size="icon"
+                className="active:scale-95 transition-transform"
                 onClick={handleUndo}
-                disabled={history.length < 2 || isLocked}
+                disabled={history.length < 2}
                 title="Undo"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -476,8 +505,9 @@ export default function RoomPage() {
               <Button
                 variant="ghost"
                 size="icon"
+                className="active:scale-95 transition-transform"
                 onClick={handleRedo}
-                disabled={future.length === 0 || isLocked}
+                disabled={future.length === 0}
                 title="Redo"
               >
                 <RotateCw className="w-4 h-4" />
@@ -495,14 +525,14 @@ export default function RoomPage() {
                 variant="destructive"
                 size="icon"
                 onClick={handleClear}
-                disabled={!content || isLocked}
+                disabled={!content}
                 className="transition-all active:scale-95"
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
             </div>
           </div>
-        </div>
+        </motion.div>
       </main>
       <Dialog open={destructOpen} onOpenChange={setDestructOpen}>
         <DialogContent className="sm:max-w-sm select-none">

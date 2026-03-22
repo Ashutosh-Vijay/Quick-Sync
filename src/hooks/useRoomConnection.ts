@@ -10,6 +10,7 @@ const DB_SAVE_DEBOUNCE = 2000;
 const TYPING_LOCK_DURATION = 3000;
 const MAX_RETRIES = 3;
 const PATCH_COOLDOWN = 4000;
+const CHANNEL_RETRY_BASE_MS = 2000; // Base delay for exponential backoff on channel errors
 
 type PatchOp = {
   i: number; // index
@@ -18,7 +19,7 @@ type PatchOp = {
 };
 
 export function useRoomConnection(roomCode: string | undefined, secretKey: string | null) {
-  const { isNuked, setNuked, setLocked, setConnected, setActiveUsers } = useRoomStore();
+  const { isNuked, setNuked, setConnected } = useRoomStore();
 
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -42,21 +43,31 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
   const typingUnlockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevContentRef = useRef('');
   const retryCountRef = useRef(0);
+  const channelRetryCountRef = useRef(0); // Bug 1: Track channel reconnection attempts
 
   useEffect(() => {
     setNuked(false);
-    setLocked(false);
     setConnected(false);
-    setActiveUsers(0);
     setNotFound(false);
     setSyncError(null);
     setContent('');
     prevContentRef.current = '';
     setIsLoading(true);
     retryCountRef.current = 0;
+    channelRetryCountRef.current = 0;
     isSavingRef.current = false;
     lastPatchTimeRef.current = 0;
-  }, [roomCode, setNuked, setLocked, setConnected, setActiveUsers]);
+
+    // Bug 3: Clear pending timeouts on room change
+    if (dbSaveTimeoutRef.current) {
+      clearTimeout(dbSaveTimeoutRef.current);
+      dbSaveTimeoutRef.current = null;
+    }
+    if (typingUnlockTimeoutRef.current) {
+      clearTimeout(typingUnlockTimeoutRef.current);
+      typingUnlockTimeoutRef.current = null;
+    }
+  }, [roomCode, setNuked, setConnected]);
 
   const calculateDiff = (oldText: string, newText: string): PatchOp | null => {
     if (oldText === newText) return null;
@@ -96,9 +107,18 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
 
       if (room) {
         retryCountRef.current = 0;
+
+        // CRITICAL: Re-check AFTER the async fetch resolves.
+        // The user may have pasted/typed while the fetch was in-flight.
+        // If so, their local changes take priority — discard the stale fetch.
+        if (isTypingRef.current || isSavingRef.current) return;
+
         const raw = unwrapPayload(room.content || '');
         // Use Ref here to guarantee latest key
-        const dbText = decryptData(raw, secretKeyRef.current);
+        const dbText = await decryptData(raw, secretKeyRef.current);
+
+        // One more guard after decryption (another async gap)
+        if (isTypingRef.current || isSavingRef.current) return;
 
         // Guard against key mismatch
         if (raw.length > 10 && dbText.length === 0 && secretKeyRef.current) {
@@ -121,6 +141,9 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
       console.error('Fetch error:', err);
       if (retryCountRef.current < MAX_RETRIES) {
         retryCountRef.current++;
+      } else {
+        // Bug 2: Surface error to UI after exceeding max retries
+        setSyncError('Connection Lost');
       }
     }
   }, [roomCode, setNuked]); // Removed secretKey dependency, using Ref
@@ -128,63 +151,83 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
   useEffect(() => {
     if (!roomCode) return;
 
+    // Bug 3: Track the channel retry timeout for cleanup
+    let channelRetryTimeout: NodeJS.Timeout | null = null;
+
+    const setupChannel = () => {
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+
+      channelRef.current = supabase
+        .channel(`room:${roomCode}`)
+        .on('broadcast', { event: 'patch' }, async (payload) => {
+          if (isTypingRef.current) return;
+
+          try {
+            lastPatchTimeRef.current = Date.now();
+
+            // Use Ref here to guarantee latest key in the callback closure
+            const opString = await decryptData(payload.payload.op, secretKeyRef.current);
+            const op = JSON.parse(opString) as PatchOp;
+
+            setContent((prev) => {
+              const patched = applyPatch(prev, op);
+              prevContentRef.current = patched;
+              return patched;
+            });
+          } catch (e) {
+            console.error('Patch sync error', e);
+            // Force fetch on error to self-heal
+            fetchLatestContent();
+          }
+        })
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'rooms',
+            filter: `room_code=eq.${roomCode}`,
+          },
+          () => fetchLatestContent()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'rooms',
+            filter: `room_code=eq.${roomCode}`,
+          },
+          () => setNuked(true)
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            setConnected(true);
+            setSyncError(null);
+            channelRetryCountRef.current = 0; // Reset on successful connection
+            fetchLatestContent();
+          } else if (status === 'CHANNEL_ERROR') {
+            setConnected(false);
+
+            // Bug 1: Auto-retry with exponential backoff
+            if (channelRetryCountRef.current < MAX_RETRIES) {
+              const delay = CHANNEL_RETRY_BASE_MS * Math.pow(2, channelRetryCountRef.current);
+              channelRetryCountRef.current++;
+              setSyncError(`Reconnecting... (${channelRetryCountRef.current}/${MAX_RETRIES})`);
+              channelRetryTimeout = setTimeout(() => {
+                setupChannel();
+              }, delay);
+            } else {
+              setSyncError('Connection Failed — Please Reload');
+            }
+          }
+        });
+    };
+
     const init = async () => {
       try {
         await fetchLatestContent();
-
-        if (channelRef.current) supabase.removeChannel(channelRef.current);
-
-        channelRef.current = supabase
-          .channel(`room:${roomCode}`)
-          .on('broadcast', { event: 'patch' }, (payload) => {
-            if (isTypingRef.current) return;
-
-            try {
-              lastPatchTimeRef.current = Date.now();
-
-              // Use Ref here to guarantee latest key in the callback closure
-              const opString = decryptData(payload.payload.op, secretKeyRef.current);
-              const op = JSON.parse(opString) as PatchOp;
-
-              setContent((prev) => {
-                const patched = applyPatch(prev, op);
-                prevContentRef.current = patched;
-                return patched;
-              });
-            } catch (e) {
-              console.error('Patch sync error', e);
-              // Force fetch on error to self-heal
-              fetchLatestContent();
-            }
-          })
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'rooms',
-              filter: `room_code=eq.${roomCode}`,
-            },
-            () => fetchLatestContent()
-          )
-          .on(
-            'postgres_changes',
-            {
-              event: 'DELETE',
-              schema: 'public',
-              table: 'rooms',
-              filter: `room_code=eq.${roomCode}`,
-            },
-            () => setNuked(true)
-          )
-          .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-              setConnected(true);
-              fetchLatestContent();
-            } else if (status === 'CHANNEL_ERROR') {
-              setSyncError('Connection Failed');
-            }
-          });
+        setupChannel();
       } catch (_err) {
         setNotFound(true);
       } finally {
@@ -211,12 +254,23 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
+
+      // Bug 3: Clear pending timeouts on cleanup
+      if (channelRetryTimeout) clearTimeout(channelRetryTimeout);
+      if (dbSaveTimeoutRef.current) {
+        clearTimeout(dbSaveTimeoutRef.current);
+        dbSaveTimeoutRef.current = null;
+      }
+      if (typingUnlockTimeoutRef.current) {
+        clearTimeout(typingUnlockTimeoutRef.current);
+        typingUnlockTimeoutRef.current = null;
+      }
     };
   }, [roomCode, fetchLatestContent, setConnected, setNuked]);
   // Removed secretKey from effect dependencies to prevent unnecessary channel teardown
   // The Ref handles the key updates for the callbacks.
 
-  const updateContent = (newContent: string) => {
+  const updateContent = async (newContent: string) => {
     if (isNuked) return;
 
     setContent(newContent);
@@ -231,19 +285,20 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
 
     if (channelRef.current) {
       const op = calculateDiff(prevContentRef.current, newContent);
+      // Update ref before await to prevent race condition on fast typing
+      prevContentRef.current = newContent;
       if (op) {
         const opString = JSON.stringify(op);
-        // Use ref here too for consistency
-        const encryptedOp = encryptData(opString, secretKeyRef.current);
-        channelRef.current.send({
+        const encryptedOp = await encryptData(opString, secretKeyRef.current);
+        channelRef.current?.send({
           type: 'broadcast',
           event: 'patch',
           payload: { op: encryptedOp },
         });
       }
+    } else {
+      prevContentRef.current = newContent;
     }
-
-    prevContentRef.current = newContent;
 
     if (typingUnlockTimeoutRef.current) clearTimeout(typingUnlockTimeoutRef.current);
     typingUnlockTimeoutRef.current = setTimeout(() => {
@@ -259,7 +314,7 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
       if (!roomCode) return;
       try {
         // Use ref here
-        const cipherText = encryptData(newContent, secretKeyRef.current);
+        const cipherText = await encryptData(newContent, secretKeyRef.current);
         const payload = wrapPayload(cipherText);
 
         const { error } = await supabase
@@ -274,9 +329,7 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
 
         setSyncError(null);
       } catch (err) {
-        // REMOVED : any
         console.error('Save error:', err);
-        // FIX: Safe error handling
         const msg = err instanceof Error ? err.message : 'Unknown Error';
         setSyncError(`Save Failed: ${msg}`);
       } finally {

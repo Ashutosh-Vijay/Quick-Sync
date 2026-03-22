@@ -21,7 +21,7 @@ export function FileShare({ roomCode, secretKey }: FileShareProps) {
   const [isOpen, setIsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { uploadFile, isUploading, progress } = useFileUpload({
+  const { uploadFiles, isUploading, progress } = useFileUpload({
     roomCode,
     secretKey,
     onUploadComplete: () => {
@@ -32,8 +32,8 @@ export function FileShare({ roomCode, secretKey }: FileShareProps) {
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    await uploadFile(file);
+    const files = Array.from(e.target.files);
+    await uploadFiles(files);
   };
 
   return (
@@ -71,6 +71,7 @@ export function FileShare({ roomCode, secretKey }: FileShareProps) {
         >
           <input
             type="file"
+            multiple
             ref={fileInputRef}
             className="hidden"
             onChange={handleFileSelect}
@@ -97,7 +98,7 @@ export function FileShare({ roomCode, secretKey }: FileShareProps) {
               <div>
                 <p className="text-sm font-medium">Click to select or drag file here</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Max 10MB • {secretKey ? 'End-to-End Encrypted' : 'Traffic Obfuscated'}
+                  Max 50MB • {secretKey ? 'End-to-End Encrypted' : 'Traffic Obfuscated'}
                 </p>
               </div>
             </>
