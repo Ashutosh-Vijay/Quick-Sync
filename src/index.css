@@ -222,6 +222,7 @@
   box-shadow:
     0 0 20px rgba(139, 92, 246, 0.3),
     0 0 60px rgba(139, 92, 246, 0.1);
+  animation-name: pulse-glow-dark;
 }
 @keyframes pulse-glow {
   0%,
@@ -236,7 +237,7 @@
       0 0 80px rgba(139, 92, 246, 0.1);
   }
 }
-.dark @keyframes pulse-glow {
+@keyframes pulse-glow-dark {
   0%,
   100% {
     box-shadow:

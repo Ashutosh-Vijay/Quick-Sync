@@ -237,8 +237,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
 
     init();
 
-    const intervalId = setInterval(fetchLatestContent, 5000);
-
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         retryCountRef.current = 0;
@@ -251,7 +249,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
 
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
-      clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleVisibility);
 
