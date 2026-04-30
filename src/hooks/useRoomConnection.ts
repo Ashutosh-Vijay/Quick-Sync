@@ -183,16 +183,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
         .on(
           'postgres_changes',
           {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'rooms',
-            filter: `room_code=eq.${roomCode}`,
-          },
-          () => fetchLatestContent()
-        )
-        .on(
-          'postgres_changes',
-          {
             event: 'DELETE',
             schema: 'public',
             table: 'rooms',
@@ -204,8 +194,7 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
           if (status === 'SUBSCRIBED') {
             setConnected(true);
             setSyncError(null);
-            channelRetryCountRef.current = 0; // Reset on successful connection
-            fetchLatestContent();
+            channelRetryCountRef.current = 0;
           } else if (status === 'CHANNEL_ERROR') {
             setConnected(false);
 
@@ -245,12 +234,10 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', handleVisibility);
 
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', handleVisibility);
 
       // Bug 3: Clear pending timeouts on cleanup
       if (channelRetryTimeout) clearTimeout(channelRetryTimeout);

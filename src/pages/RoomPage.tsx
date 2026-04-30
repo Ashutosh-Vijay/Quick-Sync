@@ -286,96 +286,6 @@ export default function RoomPage() {
     </Dialog>
   );
 
-  const DesktopControls = () => (
-    <>
-      <FileShare roomCode={roomCode!} secretKey={secretKey} />
-      <FileList roomCode={roomCode!} secretKey={secretKey} />
-      <StatusBadge />
-      <div className="h-6 w-px bg-border mx-1" />
-      <ShareDialog>
-        <Button variant="ghost" size="sm" className="gap-2">
-          <Share2 className="w-4 h-4" />
-          <span className="hidden lg:inline">Share</span>
-        </Button>
-      </ShareDialog>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-transform"
-        onClick={() => setDestructOpen(true)}
-      >
-        <Flame className="w-4 h-4" />
-        <span className="hidden lg:inline">Destruct</span>
-      </Button>
-      <div className="hidden justify-end sm:flex ml-2 items-center">
-        {syncError ? (
-          <span className="text-xs text-red-500 font-bold flex items-center animate-pulse whitespace-nowrap">
-            <CloudOff className="w-3 h-3 mr-1" /> {syncError}
-          </span>
-        ) : isSaving ? (
-          <span className="text-xs text-muted-foreground animate-pulse flex items-center">
-            <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving
-          </span>
-        ) : (
-          <span className="text-xs text-green-500 flex items-center">
-            <Check className="w-3 h-3 mr-1" /> Synced
-          </span>
-        )}
-      </div>
-      <div className="hidden sm:block ml-1">
-        <ThemeToggle />
-      </div>
-    </>
-  );
-
-  const MobileControls = () => (
-    <Sheet>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon">
-          <Menu className="w-5 h-5" />
-        </Button>
-      </SheetTrigger>
-      <SheetContent side="right" className="w-[300px] sm:w-[400px]">
-        <SheetHeader>
-          <SheetTitle className="text-left">Room Controls</SheetTitle>
-          <SheetDescription className="sr-only">Settings</SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-6 mt-6">
-          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
-            <StatusBadge />
-            <ThemeToggle />
-          </div>
-          <div className="space-y-3">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Data Mule
-            </Label>
-            <div className="grid grid-cols-2 gap-2">
-              <FileShare roomCode={roomCode!} secretKey={secretKey} />
-              <FileList roomCode={roomCode!} secretKey={secretKey} />
-            </div>
-            <ShareDialog>
-              <Button variant="outline" className="w-full gap-2">
-                <QrCode className="w-4 h-4" /> Share Room
-              </Button>
-            </ShareDialog>
-          </div>
-          <div className="space-y-3">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Danger Zone
-            </Label>
-            <Button
-              variant="destructive"
-              className="w-full gap-2"
-              onClick={() => setDestructOpen(true)}
-            >
-              <Flame className="w-4 h-4" /> Destruct Room
-            </Button>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-
   return (
     <div className="relative min-h-screen flex flex-col select-none">
       <header className="sticky top-0 z-20 border-b bg-background/70 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-border">
@@ -394,7 +304,43 @@ export default function RoomPage() {
             </div>
           </div>
           <div className="hidden md:flex items-center gap-2">
-            <DesktopControls />
+            <FileShare roomCode={roomCode!} secretKey={secretKey} />
+            <FileList roomCode={roomCode!} secretKey={secretKey} />
+            <StatusBadge />
+            <div className="h-6 w-px bg-border mx-1" />
+            <ShareDialog>
+              <Button variant="ghost" size="sm" className="gap-2">
+                <Share2 className="w-4 h-4" />
+                <span className="hidden lg:inline">Share</span>
+              </Button>
+            </ShareDialog>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 active:scale-95 transition-transform"
+              onClick={() => setDestructOpen(true)}
+            >
+              <Flame className="w-4 h-4" />
+              <span className="hidden lg:inline">Destruct</span>
+            </Button>
+            <div className="hidden justify-end sm:flex ml-2 items-center">
+              {syncError ? (
+                <span className="text-xs text-red-500 font-bold flex items-center animate-pulse whitespace-nowrap">
+                  <CloudOff className="w-3 h-3 mr-1" /> {syncError}
+                </span>
+              ) : isSaving ? (
+                <span className="text-xs text-muted-foreground animate-pulse flex items-center">
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving
+                </span>
+              ) : (
+                <span className="text-xs text-green-500 flex items-center">
+                  <Check className="w-3 h-3 mr-1" /> Synced
+                </span>
+              )}
+            </div>
+            <div className="hidden sm:block ml-1">
+              <ThemeToggle />
+            </div>
           </div>
           <div className="flex md:hidden items-center gap-2">
             {isSaving ? (
@@ -402,7 +348,51 @@ export default function RoomPage() {
             ) : (
               <Check className="w-4 h-4 text-green-500" />
             )}
-            <MobileControls />
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Menu className="w-5 h-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[300px] sm:w-[400px]">
+                <SheetHeader>
+                  <SheetTitle className="text-left">Room Controls</SheetTitle>
+                  <SheetDescription className="sr-only">Settings</SheetDescription>
+                </SheetHeader>
+                <div className="flex flex-col gap-6 mt-6">
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+                    <StatusBadge />
+                    <ThemeToggle />
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+                      Data Mule
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <FileShare roomCode={roomCode!} secretKey={secretKey} />
+                      <FileList roomCode={roomCode!} secretKey={secretKey} />
+                    </div>
+                    <ShareDialog>
+                      <Button variant="outline" className="w-full gap-2">
+                        <QrCode className="w-4 h-4" /> Share Room
+                      </Button>
+                    </ShareDialog>
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+                      Danger Zone
+                    </Label>
+                    <Button
+                      variant="destructive"
+                      className="w-full gap-2"
+                      onClick={() => setDestructOpen(true)}
+                    >
+                      <Flame className="w-4 h-4" /> Destruct Room
+                    </Button>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
