@@ -1,6 +1,7 @@
+const SUPABASE_DIRECT_URL = 'https://lfchewptxtdyzfkstiun.supabase.co';
+
 interface Env {
   R2_FILES: R2Bucket;
-  VITE_SUPABASE_URL: string;
   VITE_SUPABASE_ANON_KEY: string;
 }
 
@@ -23,7 +24,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const roomRes = await fetch(
-    `${env.VITE_SUPABASE_URL}/rest/v1/rooms?room_code=eq.${encodeURIComponent(roomCode)}&select=room_code`,
+    `${SUPABASE_DIRECT_URL}/rest/v1/rooms?room_code=eq.${encodeURIComponent(roomCode)}&select=room_code`,
     {
       headers: {
         apikey: env.VITE_SUPABASE_ANON_KEY,
