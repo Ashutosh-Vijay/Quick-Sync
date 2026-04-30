@@ -1,11 +1,11 @@
 const SUPABASE_HTTP = 'https://lfchewptxtdyzfkstiun.supabase.co';
-const SUPABASE_WS = 'wss://lfchewptxtdyzfkstiun.supabase.co';
 
 export const onRequest: PagesFunction<unknown, 'path'> = async ({ request, params }) => {
   const segments = Array.isArray(params.path) ? params.path : [params.path].filter(Boolean);
   const path = segments.join('/');
   const url = new URL(request.url);
   const tail = `/${path}${url.search}`;
+  const targetUrl = `${SUPABASE_HTTP}${tail}`;
 
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -20,10 +20,9 @@ export const onRequest: PagesFunction<unknown, 'path'> = async ({ request, param
 
   const upgrade = request.headers.get('Upgrade');
   if (upgrade && upgrade.toLowerCase() === 'websocket') {
-    return fetch(`${SUPABASE_WS}${tail}`, request);
+    return fetch(targetUrl, request);
   }
 
-  const targetUrl = `${SUPABASE_HTTP}${tail}`;
   const proxied = await fetch(
     new Request(targetUrl, {
       method: request.method,
