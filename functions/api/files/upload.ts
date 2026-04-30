@@ -1,7 +1,7 @@
 interface Env {
   R2_FILES: R2Bucket;
-  SUPABASE_URL: string;
-  SUPABASE_ANON_KEY: string;
+  VITE_SUPABASE_URL: string;
+  VITE_SUPABASE_ANON_KEY: string;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -23,11 +23,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const roomRes = await fetch(
-    `${env.SUPABASE_URL}/rest/v1/rooms?room_code=eq.${encodeURIComponent(roomCode)}&select=room_code`,
+    `${env.VITE_SUPABASE_URL}/rest/v1/rooms?room_code=eq.${encodeURIComponent(roomCode)}&select=room_code`,
     {
       headers: {
-        apikey: env.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+        apikey: env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${env.VITE_SUPABASE_ANON_KEY}`,
       },
     }
   );
