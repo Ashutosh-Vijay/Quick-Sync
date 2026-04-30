@@ -4,7 +4,8 @@ import { encryptData, encryptFile } from '@/lib/crypto';
 import { wrapPayload } from '@/lib/payloadHelper';
 import { useToast } from '@/hooks/use-toast';
 
-const MAX_FILE_SIZE_MB = 50;
+const USE_R2 = import.meta.env.VITE_USE_R2 === 'true';
+const MAX_FILE_SIZE_MB = USE_R2 ? 100 : 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 interface UseFileUploadProps {
@@ -67,27 +68,44 @@ export function useFileUpload({ roomCode, secretKey, onUploadComplete }: UseFile
           typeof crypto.randomUUID === 'function'
             ? crypto.randomUUID()
             : 'uuid-' + Math.random().toString(36).slice(2, 11);
-        const filePath = `${roomCode}/${uniqueId}/${boringName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('quick-share')
-          .upload(filePath, encryptedContent, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: 'application/octet-stream',
-          });
+        let publicUrl: string;
 
-        if (uploadError) throw uploadError;
+        if (USE_R2) {
+          const res = await fetch(
+            `/api/files/upload?room=${encodeURIComponent(roomCode)}&id=${uniqueId}`,
+            {
+              method: 'POST',
+              body: encryptedContent,
+              headers: { 'Content-Type': 'application/octet-stream' },
+            }
+          );
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(`R2 upload failed (${res.status}): ${text}`);
+          }
+          const json = (await res.json()) as { url: string };
+          publicUrl = json.url;
+        } else {
+          const filePath = `${roomCode}/${uniqueId}/${boringName}`;
+          const { error: uploadError } = await supabase.storage
+            .from('quick-share')
+            .upload(filePath, encryptedContent, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: 'application/octet-stream',
+            });
+          if (uploadError) throw uploadError;
+          publicUrl = supabase.storage.from('quick-share').getPublicUrl(filePath).data.publicUrl;
+        }
 
         setProgress(((i + 0.8) / validFiles.length) * 100);
-
-        const { data } = supabase.storage.from('quick-share').getPublicUrl(filePath);
 
         const meta = {
           n: file.name,
           s: (file.size / 1024 / 1024).toFixed(2) + ' MB',
           t: file.type,
-          u: data.publicUrl,
+          u: publicUrl,
         };
         const encryptedMeta = await encryptData(JSON.stringify(meta), secretKey);
         const payload = wrapPayload(encryptedMeta);

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { deleteAllRoomFiles } from '@/lib/fileStorage';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -39,24 +40,7 @@ function detectMode(content: string | null): 'public' | 'private' | 'empty' {
 }
 
 async function deleteRoomStorage(roomCode: string) {
-  const { data: folders, error: listErr } = await supabase.storage
-    .from('quick-share')
-    .list(roomCode);
-  if (listErr) throw new Error(`Storage list failed for ${roomCode}: ${listErr.message}`);
-  if (!folders || folders.length === 0) return;
-  const paths: string[] = [];
-  for (const folder of folders) {
-    const { data: files, error: fileErr } = await supabase.storage
-      .from('quick-share')
-      .list(`${roomCode}/${folder.name}`);
-    if (fileErr)
-      throw new Error(`Storage list failed for ${roomCode}/${folder.name}: ${fileErr.message}`);
-    (files ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
-  }
-  if (paths.length > 0) {
-    const { error: removeErr } = await supabase.storage.from('quick-share').remove(paths);
-    if (removeErr) throw new Error(`Storage remove failed: ${removeErr.message}`);
-  }
+  await deleteAllRoomFiles(roomCode);
 }
 
 async function deleteRoomFull(roomCode: string) {

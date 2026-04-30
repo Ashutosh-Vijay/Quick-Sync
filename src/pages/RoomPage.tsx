@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
 import { getKeyFromHash } from '@/lib/crypto';
 import { supabase } from '@/lib/supabase';
+import { deleteAllRoomFiles } from '@/lib/fileStorage';
 import { useRoomConnection } from '@/hooks/useRoomConnection';
 import { useFileUpload } from '@/hooks/useFileUpload';
 import { useRoomStore } from '@/store/roomStore';
@@ -188,19 +189,7 @@ export default function RoomPage() {
     if (!roomCode) return;
     setIsDestructing(true);
     try {
-      const { data: folders } = await supabase.storage.from('quick-share').list(roomCode);
-      if (folders && folders.length > 0) {
-        const paths: string[] = [];
-        for (const folder of folders) {
-          const { data: files } = await supabase.storage
-            .from('quick-share')
-            .list(`${roomCode}/${folder.name}`);
-          (files ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
-        }
-        if (paths.length > 0) {
-          await supabase.storage.from('quick-share').remove(paths);
-        }
-      }
+      await deleteAllRoomFiles(roomCode);
       await supabase.from('room_files').delete().eq('room_code', roomCode);
       await supabase.from('rooms').delete().eq('room_code', roomCode);
       setDestructOpen(false);

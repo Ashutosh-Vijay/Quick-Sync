@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
 import { decryptData, decryptFile } from '@/lib/crypto';
 import { unwrapPayload } from '@/lib/payloadHelper';
+import { deleteFileByUrl, deleteAllRoomFiles } from '@/lib/fileStorage';
 import {
   Download,
   Trash2,
@@ -52,12 +53,6 @@ function timeAgo(dateString: string) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return date.toLocaleDateString();
-}
-
-function storagePathFromUrl(url: string): string | null {
-  const marker = '/quick-share/';
-  const idx = url.indexOf(marker);
-  return idx === -1 ? null : url.slice(idx + marker.length);
 }
 
 interface FileListProps {
@@ -173,13 +168,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
     if (expandedId === id) setExpandedId(null);
 
     try {
-      // Delete from storage first
-      if (file) {
-        const storagePath = storagePathFromUrl(file.url);
-        if (storagePath) {
-          await supabase.storage.from('quick-share').remove([storagePath]);
-        }
-      }
+      if (file) await deleteFileByUrl(file.url);
       const { error } = await supabase.from('room_files').delete().eq('id', id);
       if (error) throw error;
     } catch (error) {
@@ -192,19 +181,7 @@ export function FileList({ roomCode, secretKey }: FileListProps) {
   const handleDeleteAll = async () => {
     setIsClearingAll(true);
     try {
-      const { data: folders } = await supabase.storage.from('quick-share').list(roomCode);
-      if (folders && folders.length > 0) {
-        const paths: string[] = [];
-        for (const folder of folders) {
-          const { data: storageFiles } = await supabase.storage
-            .from('quick-share')
-            .list(`${roomCode}/${folder.name}`);
-          (storageFiles ?? []).forEach((f) => paths.push(`${roomCode}/${folder.name}/${f.name}`));
-        }
-        if (paths.length > 0) {
-          await supabase.storage.from('quick-share').remove(paths);
-        }
-      }
+      await deleteAllRoomFiles(roomCode);
       await supabase.from('room_files').delete().eq('room_code', roomCode);
       setFiles([]);
       setExpandedId(null);
