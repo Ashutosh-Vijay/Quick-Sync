@@ -10,7 +10,6 @@ const DB_SAVE_DEBOUNCE = 2000;
 const TYPING_LOCK_DURATION = 3000;
 const MAX_RETRIES = 3;
 const PATCH_COOLDOWN = 4000;
-const CHANNEL_RETRY_BASE_MS = 2000; // Base delay for exponential backoff on channel errors
 
 type PatchOp = {
   i: number; // index
@@ -43,7 +42,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
   const typingUnlockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevContentRef = useRef('');
   const retryCountRef = useRef(0);
-  const channelRetryCountRef = useRef(0); // Bug 1: Track channel reconnection attempts
 
   useEffect(() => {
     setNuked(false);
@@ -54,7 +52,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
     prevContentRef.current = '';
     setIsLoading(true);
     retryCountRef.current = 0;
-    channelRetryCountRef.current = 0;
     isSavingRef.current = false;
     lastPatchTimeRef.current = 0;
 
@@ -151,9 +148,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
   useEffect(() => {
     if (!roomCode) return;
 
-    // Bug 3: Track the channel retry timeout for cleanup
-    let channelRetryTimeout: NodeJS.Timeout | null = null;
-
     const setupChannel = () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
 
@@ -194,21 +188,9 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
           if (status === 'SUBSCRIBED') {
             setConnected(true);
             setSyncError(null);
-            channelRetryCountRef.current = 0;
-          } else if (status === 'CHANNEL_ERROR') {
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             setConnected(false);
-
-            // Bug 1: Auto-retry with exponential backoff
-            if (channelRetryCountRef.current < MAX_RETRIES) {
-              const delay = CHANNEL_RETRY_BASE_MS * Math.pow(2, channelRetryCountRef.current);
-              channelRetryCountRef.current++;
-              setSyncError(`Reconnecting... (${channelRetryCountRef.current}/${MAX_RETRIES})`);
-              channelRetryTimeout = setTimeout(() => {
-                setupChannel();
-              }, delay);
-            } else {
-              setSyncError('Connection Failed — Please Reload');
-            }
+            setSyncError('Reconnecting...');
           }
         });
     };
@@ -239,8 +221,6 @@ export function useRoomConnection(roomCode: string | undefined, secretKey: strin
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       document.removeEventListener('visibilitychange', handleVisibility);
 
-      // Bug 3: Clear pending timeouts on cleanup
-      if (channelRetryTimeout) clearTimeout(channelRetryTimeout);
       if (dbSaveTimeoutRef.current) {
         clearTimeout(dbSaveTimeoutRef.current);
         dbSaveTimeoutRef.current = null;
