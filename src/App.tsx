@@ -5,7 +5,6 @@ import { BackgroundCanvas } from './components/BackgroundCanvas';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const RoomPage = lazy(() => import('./pages/RoomPage'));
-const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 function App() {
   return (
@@ -15,7 +14,6 @@ function App() {
         <Suspense fallback={null}>
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/room/XX13XX" element={<AdminPage />} />
             <Route path="/room/:roomCode" element={<RoomPage />} />
           </Routes>
         </Suspense>
